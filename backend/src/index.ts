@@ -10,6 +10,7 @@ import { authRouter } from "./routes/auth.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { statsRouter } from "./routes/stats.js";
 import { tipsRouter } from "./routes/tips.js";
+import { codesRouter } from "./routes/codes.js";
 import { ensureAdmin, seedIfEmpty } from "./scripts/seed.js";
 import { getProducts, loadProductPrices } from "./products.js";
 
@@ -67,6 +68,7 @@ app.use("/api/auth", authLimiter, authRouter);
 app.use("/api/tips", tipsRouter);
 app.use("/api/stats", statsRouter);
 app.use("/api/payments", paymentLimiter, paymentsRouter);
+app.use("/api/codes", codesRouter);
 app.use("/api/admin", adminRouter);
 
 app.use((_req, res) => {

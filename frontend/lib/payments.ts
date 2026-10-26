@@ -20,6 +20,11 @@ export type PaymentVerify = {
   smsSent?: boolean;
   slipViewed?: boolean;
   createdAt?: string;
+  revealCode?: string;
+  codeType?: string;
+  unlockCount?: number;
+  maxUnlocks?: number;
+  vipExpiresAt?: string | null;
   tips?: PaidTip[];
 };
 

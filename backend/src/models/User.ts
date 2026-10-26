@@ -32,7 +32,11 @@ export function hasActiveVip(user: {
   vipExpiresAt?: Date | null;
 }): boolean {
   if (user.role === "admin") return true;
-  return Boolean(user.isVip);
+  if (!user.isVip) return false;
+  if (user.vipExpiresAt) {
+    return new Date(user.vipExpiresAt).getTime() > Date.now();
+  }
+  return true;
 }
 
 export const User: Model<UserDoc> =

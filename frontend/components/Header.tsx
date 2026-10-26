@@ -30,12 +30,22 @@ export function Header({
           <span className="text-lg font-extrabold tracking-tight">{BRAND_NAME}</span>
         </Link>
 
-        <nav className="hidden items-center gap-6 text-sm text-mute md:flex">
-          <a href="#tips" className="hover:text-ink">
-            Live tips
+        <nav className="hidden items-center gap-5 text-sm text-mute md:flex">
+          <a href="#tips" className="flex items-center gap-2 transition hover:text-ink">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-fire opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-fire" />
+            </span>
+            Live boards
           </a>
-          <a href="#vip" className="hover:text-ink">
+          <a href="#vip" className="transition hover:text-ink">
             VIP
+          </a>
+          <a
+            href="#reveal-code"
+            className="rounded-full border border-line bg-surface/80 px-3.5 py-1.5 text-xs font-semibold text-cream transition hover:border-fire/50 hover:bg-surface"
+          >
+            🔑 Reveal code
           </a>
           <Link href="/profile" className="btn-primary">
             Get VIP
@@ -43,12 +53,18 @@ export function Header({
         </nav>
 
         <div className="flex items-center gap-2 md:hidden">
-          <Link href="/profile" className="btn-primary px-3 py-2 text-xs">
-            Get VIP
+          <a
+            href="#reveal-code"
+            className="rounded-full border border-line bg-surface px-2.5 py-1.5 text-[11px] font-semibold text-cream"
+          >
+            🔑 Code
+          </a>
+          <Link href="/profile" className="btn-primary px-3 py-1.5 text-xs">
+            VIP
           </Link>
           <button
             type="button"
-            className="grid h-10 w-10 place-items-center rounded-full border border-white/20 text-ink"
+            className="grid h-9 w-9 place-items-center rounded-full border border-white/20 text-ink"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
@@ -59,15 +75,23 @@ export function Header({
       </div>
 
       {open && (
-        <div className="space-y-3 border-t border-white/10 bg-paper/95 px-4 py-4 text-sm backdrop-blur-xl md:hidden">
-          <a href="#tips" onClick={() => setOpen(false)} className="block">
-            Live tips
+        <div className="space-y-3 border-t border-white/10 bg-paper/95 px-5 py-5 text-sm backdrop-blur-xl md:hidden">
+          <a href="#tips" onClick={() => setOpen(false)} className="flex items-center gap-2 font-medium">
+            <span className="h-2 w-2 rounded-full bg-fire animate-pulse" />
+            Live boards
           </a>
-          <a href="#vip" onClick={() => setOpen(false)} className="block">
-            VIP
+          <a href="#vip" onClick={() => setOpen(false)} className="block font-medium">
+            VIP Subscription
           </a>
-          <Link href="/profile" className="btn-primary inline-flex">
-            Get VIP
+          <a
+            href="#reveal-code"
+            onClick={() => setOpen(false)}
+            className="block font-semibold text-fire"
+          >
+            🔑 Enter Reveal Code
+          </a>
+          <Link href="/profile" className="btn-primary mt-2 inline-flex w-full">
+            Get VIP Access
           </Link>
         </div>
       )}

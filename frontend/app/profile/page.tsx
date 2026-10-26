@@ -104,10 +104,16 @@ export default function ProfilePage() {
                 </button>
               </div>
             ))}
-            <div className="flex items-center justify-between gap-3 border-t border-fire/30 bg-fire/10 px-4 py-4">
+            <div className="flex items-center justify-between gap-3 border-t border-amber-400/30 bg-gradient-to-r from-amber-500/15 to-star/15 px-4 py-4">
               <div className="min-w-0">
-                <p className="text-base font-bold text-cream">{vipProduct?.label || "VIP all access"}</p>
-                <p className="mt-0.5 text-sm font-extrabold text-star">
+                <div className="flex items-center gap-2">
+                  <p className="text-base font-extrabold text-white">{vipProduct?.label || "VIP all access"}</p>
+                  <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-black uppercase text-pitch-dark">
+                    7 Days
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-star/80">Every board + SportyBet codes + 2 devices</p>
+                <p className="mt-1 text-sm font-black text-amber-300">
                   {formatProductPrice(vipProduct, country)}
                 </p>
               </div>
@@ -115,13 +121,21 @@ export default function ProfilePage() {
                 type="button"
                 onClick={() => void startPay("vip")}
                 disabled={Boolean(busy)}
-                className="btn-primary shrink-0 px-4 py-2 text-sm"
+                className="btn-vip shrink-0 px-5 py-2 text-sm"
               >
-                {busy === "vip" ? "…" : "Join"}
+                {busy === "vip" ? "…" : "Get VIP 👑"}
               </button>
             </div>
           </div>
         )}
+        <div className="mt-4 text-center">
+          <Link
+            href="/#reveal-code"
+            className="text-xs font-semibold text-mute hover:text-fire"
+          >
+            Already bought odds? Enter your reveal code on the home screen →
+          </Link>
+        </div>
         {error && (
           <p className="mt-5 rounded-2xl border border-lost/30 bg-lost/10 px-4 py-3 text-sm text-lost">
             {error}

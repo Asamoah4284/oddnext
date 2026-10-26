@@ -22,6 +22,8 @@ export interface ParseBetslipResult {
  *   "Over 1.5 - 1.15 Union Gilloise vs Hapoel Be'er Sheva FC - Over/Under"
  *   "2-5+ - 1.12 Al Gharafa SC vs Al Ahli Doha SC - Goal Bounds"
  *   "Draw or Away - 1.24 Sardarapat FC vs FC Urartu Yerevan - Double Chance"
+ * - 2-line format (WhatsApp lists with bold/numbering):
+ *   "Union Gilloise vs Hapoel Be'er Sheva FC - Over/Under \n 2. *Over 1.5* - 1.14"
  * - Single-line match first format:
  *   "Team A vs Team B - Over 1.5 - 1.25"
  *   "Team A vs Team B : Over 1.5 @ 1.25"
@@ -79,6 +81,7 @@ export function parseBetslip(text: string): ParseBetslipResult {
   });
 
   let currentItem: Partial<ParsedPickItem> | null = null;
+  let currentMarket = "";
   let idCounter = 1;
 
   for (let i = 0; i < lines.length; i++) {
@@ -90,6 +93,7 @@ export function parseBetslip(text: string): ParseBetslipResult {
       if (currentItem && currentItem.homeTeam && currentItem.prediction) {
         result.items.push(finishItem(currentItem, idCounter++));
         currentItem = null;
+        currentMarket = "";
       }
       result.items.push(finishItem(single, idCounter++));
       continue;
@@ -98,17 +102,40 @@ export function parseBetslip(text: string): ParseBetslipResult {
     // Check if line is "Selection: ..." or "Pick: ..." or "Tip: ..."
     const selMatch = line.match(/^(?:selection|pick|prediction|tip)\s*[:\-]\s*(.+)$/i);
     if (selMatch) {
+      const cleanedPick = selMatch[1].replace(/[*_~]/g, "").trim();
       if (currentItem) {
-        currentItem.prediction = selMatch[1].trim();
+        currentItem.prediction = cleanedPick;
       } else if (i > 0 && isMatchTeams(lines[i - 1])) {
-        const { home, away } = splitTeams(lines[i - 1]);
+        const { home, away, market } = splitTeams(lines[i - 1]);
+        let pred = cleanedPick;
+        if (market && !pred.toLowerCase().includes(market.toLowerCase())) {
+          pred = `${pred} (${market})`;
+        }
         currentItem = {
           homeTeam: home,
           awayTeam: away,
-          prediction: selMatch[1].trim(),
+          prediction: pred,
           odds: 1.5,
         };
       }
+      continue;
+    }
+
+    // Check if line is 2-line WhatsApp format: "Pick - Odds" or "*Pick* - Odds" (e.g. "2. *Over 1.5* - 1.14")
+    const cleanedLine = cleanLinePrefix(line);
+    const pickOddMatch = cleanedLine.match(/^[*_~]?(.+?)[*_~]?\s*[-@]\s*([0-9]+(?:\.[0-9]+)?)$/);
+    if (pickOddMatch && currentItem && !currentItem.prediction) {
+      const rawPick = pickOddMatch[1].replace(/[*_~]/g, "").trim();
+      const oddsVal = parseFloat(pickOddMatch[2]);
+      let pred = rawPick;
+      if (currentMarket && !pred.toLowerCase().includes(currentMarket.toLowerCase())) {
+        pred = `${pred} (${currentMarket})`;
+      }
+      currentItem.prediction = pred;
+      currentItem.odds = isNaN(oddsVal) ? 1.5 : oddsVal;
+      result.items.push(finishItem(currentItem, idCounter++));
+      currentItem = null;
+      currentMarket = "";
       continue;
     }
 
@@ -121,6 +148,7 @@ export function parseBetslip(text: string): ParseBetslipResult {
         if (currentItem.homeTeam && currentItem.awayTeam) {
           result.items.push(finishItem(currentItem, idCounter++));
           currentItem = null;
+          currentMarket = "";
         }
       }
       continue;
@@ -133,6 +161,7 @@ export function parseBetslip(text: string): ParseBetslipResult {
       currentItem.odds = isNaN(val) ? 1.5 : val;
       result.items.push(finishItem(currentItem, idCounter++));
       currentItem = null;
+      currentMarket = "";
       continue;
     }
 
@@ -141,19 +170,24 @@ export function parseBetslip(text: string): ParseBetslipResult {
       if (currentItem && currentItem.homeTeam && currentItem.prediction) {
         result.items.push(finishItem(currentItem, idCounter++));
       }
-      const { home, away } = splitTeams(line);
+      const { home, away, market } = splitTeams(line);
       currentItem = {
         homeTeam: home,
         awayTeam: away,
         prediction: "",
         odds: 1.5,
       };
+      currentMarket = market || "";
       continue;
     }
 
     // If currentItem exists but has no prediction yet, and line doesn't match above, it's the prediction
     if (currentItem && !currentItem.prediction && !isMatchTeams(line)) {
-      currentItem.prediction = line;
+      let pred = line.replace(/[*_~]/g, "").trim();
+      if (currentMarket && !pred.toLowerCase().includes(currentMarket.toLowerCase())) {
+        pred = `${pred} (${currentMarket})`;
+      }
+      currentItem.prediction = pred;
       continue;
     }
   }
@@ -202,7 +236,7 @@ export function tryParseSingleLine(rawLine: string): Partial<ParsedPickItem> | n
         return {
           homeTeam: home,
           awayTeam: away,
-          prediction: parts[predIndex] || "Over 1.5",
+          prediction: parts[predIndex]?.replace(/[*_~]/g, "") || "Over 1.5",
           odds: oddsVal,
         };
       }
@@ -213,32 +247,17 @@ export function tryParseSingleLine(rawLine: string): Partial<ParsedPickItem> | n
   // e.g. "Over 1.5 - 1.15 Union Gilloise vs Hapoel Be'er Sheva FC - Over/Under"
   // e.g. "2-5+ - 1.12 Al Gharafa SC vs Al Ahli Doha SC - Goal Bounds"
   // e.g. "Draw or Away - 1.24 Sardarapat FC vs FC Urartu Yerevan - Double Chance"
-  const pickOddMatchRegex = /^(.+?)\s+[-@]\s+([0-9]+(?:\.[0-9]+)?)\s+(.+)$/i;
+  const pickOddMatchRegex = /^([*~_]?.+?[*~_]?)\s+[-@]\s+([0-9]+(?:\.[0-9]+)?)\s+(.+)$/i;
   const match1 = line.match(pickOddMatchRegex);
   if (match1) {
-    const rawPick = match1[1].trim();
+    const rawPick = match1[1].replace(/[*_~]/g, "").trim();
     const odds = parseFloat(match1[2]);
     const rest = match1[3].trim();
 
     const vsMatch = rest.match(/^(.*?)\s+(?:vs\.?|v\.?)\s+(.+)$/i);
     if (vsMatch) {
       const homeTeam = vsMatch[1].trim();
-      let awayTeam = vsMatch[2].trim();
-      let market = "";
-
-      // Check if awayTeam has " - Market" at the end
-      const marketMatch = awayTeam.match(/^(.*?)\s+[-–—]\s+([A-Za-z0-9/+\s().&'-]+)$/);
-      if (marketMatch) {
-        awayTeam = marketMatch[1].trim();
-        market = marketMatch[2].trim();
-      } else {
-        // Also check if awayTeam ends with "(Market)"
-        const parenMarket = awayTeam.match(/^(.*?)\s+\(([A-Za-z0-9/+\s.&'-]+)\)$/);
-        if (parenMarket) {
-          awayTeam = parenMarket[1].trim();
-          market = parenMarket[2].trim();
-        }
-      }
+      const { away, market } = extractMarket(vsMatch[2].trim());
 
       let prediction = rawPick;
       if (market && !prediction.toLowerCase().includes(market.toLowerCase())) {
@@ -247,7 +266,7 @@ export function tryParseSingleLine(rawLine: string): Partial<ParsedPickItem> | n
 
       return {
         homeTeam,
-        awayTeam,
+        awayTeam: away,
         prediction,
         odds: isNaN(odds) ? 1.5 : odds,
       };
@@ -264,7 +283,7 @@ export function tryParseSingleLine(rawLine: string): Partial<ParsedPickItem> | n
   if (teamsFirstMatch) {
     const homeTeam = teamsFirstMatch[1].trim();
     const awayTeam = teamsFirstMatch[2].trim();
-    const prediction = teamsFirstMatch[3].trim();
+    const prediction = teamsFirstMatch[3].replace(/[*_~]/g, "").trim();
     const odds = parseFloat(teamsFirstMatch[4]) || 1.5;
     return {
       homeTeam,
@@ -275,6 +294,23 @@ export function tryParseSingleLine(rawLine: string): Partial<ParsedPickItem> | n
   }
 
   return null;
+}
+
+function extractMarket(awayRaw: string): { away: string; market: string } {
+  let away = awayRaw;
+  let market = "";
+  const marketMatch = away.match(/^(.*?)\s+[-–—]\s+([A-Za-z0-9/+\s().&'-]+)$/);
+  if (marketMatch) {
+    away = marketMatch[1].trim();
+    market = marketMatch[2].trim();
+  } else {
+    const parenMarket = away.match(/^(.*?)\s+\(([A-Za-z0-9/+\s.&'-]+)\)$/);
+    if (parenMarket) {
+      away = parenMarket[1].trim();
+      market = parenMarket[2].trim();
+    }
+  }
+  return { away, market };
 }
 
 function finishItem(item: Partial<ParsedPickItem>, count: number): ParsedPickItem {
@@ -321,22 +357,26 @@ export function isMatchTeams(str: string): boolean {
   return false;
 }
 
-export function splitTeams(str: string): { home: string; away: string } {
+export function splitTeams(str: string): { home: string; away: string; market?: string } {
+  let home = "";
+  let away = "";
   const vsParts = str.split(/\s+(?:vs\.?|v\.?)\s+/i);
   if (vsParts.length >= 2) {
-    return {
-      home: vsParts[0].trim(),
-      away: vsParts.slice(1).join(" vs ").trim(),
-    };
+    home = vsParts[0].trim();
+    away = vsParts.slice(1).join(" vs ").trim();
+  } else {
+    const dashParts = str.split(/\s+[-–—]\s+/);
+    if (dashParts.length >= 2) {
+      home = dashParts[0].trim();
+      away = dashParts.slice(1).join(" - ").trim();
+    } else {
+      home = str.trim();
+      away = "";
+    }
   }
-  const dashParts = str.split(/\s+[-–—]\s+/);
-  if (dashParts.length >= 2) {
-    return {
-      home: dashParts[0].trim(),
-      away: dashParts.slice(1).join(" - ").trim(),
-    };
-  }
-  return { home: str.trim(), away: "" };
+
+  const { away: cleanAway, market } = extractMarket(away);
+  return { home, away: cleanAway, market };
 }
 
 export function calculateCombinedOdds(items: { odds: number }[]): number {

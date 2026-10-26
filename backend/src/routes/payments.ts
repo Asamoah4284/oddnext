@@ -133,6 +133,11 @@ async function paymentSnapshot(
     currency?: string;
     provider?: string;
     createdAt?: Date;
+    revealCode?: string | null;
+    codeType?: string | null;
+    unlockCount?: number | null;
+    maxUnlocks?: number | null;
+    vipExpiresAt?: Date | null;
   },
   options?: { quick?: boolean }
 ) {
@@ -144,8 +149,13 @@ async function paymentSnapshot(
       product: payment.product,
       smsSent: payment.smsSent,
       slipViewed: viewed,
+      revealCode: payment.revealCode,
+      codeType: payment.codeType,
+      unlockCount: payment.unlockCount ?? 0,
+      maxUnlocks: payment.maxUnlocks ?? 2,
+      vipExpiresAt: payment.vipExpiresAt,
       createdAt: payment.createdAt,
-      tips: viewed ? [] : await loadPaidTips(payment.product || "vip"),
+      tips: await loadPaidTips(payment.product || "vip"),
     };
   }
 
@@ -179,6 +189,11 @@ async function paymentSnapshot(
         product: fulfilled.product,
         smsSent: fulfilled.smsSent,
         slipViewed: false,
+        revealCode: fulfilled.revealCode,
+        codeType: fulfilled.product === "vip" ? "vip" : "single",
+        unlockCount: 0,
+        maxUnlocks: fulfilled.product === "vip" ? 999999 : 2,
+        vipExpiresAt: fulfilled.vipExpiresAt,
         createdAt: payment.createdAt,
         tips,
       };
@@ -221,6 +236,11 @@ async function paymentSnapshot(
       product: fulfilled.product,
       smsSent: fulfilled.smsSent,
       slipViewed: false,
+      revealCode: fulfilled.revealCode,
+      codeType: fulfilled.product === "vip" ? "vip" : "single",
+      unlockCount: 0,
+      maxUnlocks: fulfilled.product === "vip" ? 999999 : 2,
+      vipExpiresAt: fulfilled.vipExpiresAt,
       createdAt: payment.createdAt,
       tips,
     };
@@ -365,10 +385,13 @@ paymentsRouter.post(
           ? config.frontendUrl
           : "https://oddnext.onrender.com");
 
-      const callback = formatMoolreUrl(
-        `${req.protocol}://${req.get("host")}/api/payments/webhook`,
-        publicBackend
-      );
+      const callbackBase = process.env.CALLBACK_URL || publicBackend;
+      const callback = callbackBase.includes("/api/payments/webhook")
+        ? callbackBase
+        : formatMoolreUrl(
+            `${req.protocol}://${req.get("host")}/api/payments/webhook`,
+            callbackBase
+          );
       const moolreRedirect = formatMoolreUrl(redirect, publicFrontend);
 
       if (!hasMoolreCredentials()) {

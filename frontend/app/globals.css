@@ -19,23 +19,55 @@ body {
 
 .btn-gold,
 .btn-primary {
-  @apply inline-flex items-center justify-center rounded-full bg-fire px-5 py-2.5 text-sm font-semibold text-pitch-dark transition hover:bg-fire-dark;
+  @apply inline-flex items-center justify-center rounded-full bg-gradient-to-r from-fire to-emerald-400 px-5 py-2.5 text-sm font-bold text-pitch-dark shadow-[0_0_20px_rgba(34,197,94,0.25)] transition-all duration-200 hover:shadow-[0_0_30px_rgba(34,197,94,0.45)] hover:brightness-105 active:scale-[0.98];
 }
 
 .btn-ghost {
-  @apply inline-flex items-center justify-center rounded-full border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-semibold text-cream transition hover:bg-white/10;
+  @apply inline-flex items-center justify-center rounded-full border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-semibold text-cream backdrop-blur-md transition-all duration-200 hover:border-white/30 hover:bg-white/10 active:scale-[0.98];
 }
 
 .btn-outline {
-  @apply inline-flex items-center justify-center rounded-full border border-line bg-surface px-5 py-2.5 text-sm font-semibold text-ink transition hover:border-mute;
+  @apply inline-flex items-center justify-center rounded-full border border-line bg-surface/80 px-5 py-2.5 text-sm font-semibold text-ink backdrop-blur-md transition-all duration-200 hover:border-fire/40 hover:text-cream active:scale-[0.98];
+}
+
+.btn-vip {
+  @apply inline-flex items-center justify-center rounded-full bg-gradient-to-r from-amber-400 via-star to-lime-400 px-5 py-2.5 text-sm font-extrabold text-pitch-dark shadow-[0_0_25px_rgba(234,179,8,0.3)] transition-all duration-200 hover:brightness-110 active:scale-[0.98];
 }
 
 .card {
-  @apply rounded-2xl border border-line bg-surface text-ink shadow-slip;
+  @apply rounded-2xl border border-line/80 bg-surface/90 text-ink shadow-slip backdrop-blur-sm transition-all duration-200;
+}
+
+.glass-card {
+  @apply rounded-3xl border border-line/80 bg-gradient-to-b from-surface/95 to-pitch/95 shadow-2xl backdrop-blur-xl;
 }
 
 .field {
-  @apply w-full rounded-xl border border-line bg-paper px-3.5 py-3 text-sm text-ink outline-none placeholder:text-mute focus:border-fire;
+  @apply w-full rounded-xl border border-line bg-paper/90 px-3.5 py-3 text-sm text-ink outline-none placeholder:text-mute/80 transition-all focus:border-fire focus:ring-1 focus:ring-fire/30;
+}
+
+.glow-fire {
+  box-shadow: 0 0 35px -5px rgba(34, 197, 94, 0.3);
+}
+
+.glow-vip {
+  box-shadow: 0 0 35px -5px rgba(250, 204, 21, 0.25);
+}
+
+/* Custom sleek dark scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0d0c;
+}
+::-webkit-scrollbar-thumb {
+  background: #24302a;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #22c55e;
 }
 
 .font-display {

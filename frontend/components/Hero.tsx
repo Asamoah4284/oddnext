@@ -78,25 +78,45 @@ export function Hero({ telegramUrl }: { telegramUrl: string }) {
         <p className="mt-3 max-w-xl font-sans text-sm tracking-normal text-white/75 sm:text-base md:text-xl">
           {slide.subtitle}
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/70">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-3 py-1 ring-1 ring-white/10 backdrop-blur-sm">
+            <span className="text-fire">⚡</span> Instant Reveal Code
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-3 py-1 ring-1 ring-white/10 backdrop-blur-sm">
+            <span className="text-star">🏆</span> 87%+ Win Rate
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-3 py-1 ring-1 ring-white/10 backdrop-blur-sm">
+            <span className="text-won">✓</span> SportyBet & BetPawa Codes
+          </span>
+        </div>
         <div className="mt-6 flex w-full flex-col gap-2 sm:mt-8 sm:w-auto sm:flex-row sm:gap-3">
-          <a href="#tips" className="btn-primary w-full px-6 py-3 sm:w-auto">
-            Start Winning Today
+          <a href="#tips" className="btn-primary w-full px-7 py-3.5 text-base sm:w-auto">
+            Start Winning Today 🔥
           </a>
           <a
             href={telegramUrl}
             target="_blank"
             rel="noreferrer"
-            className="btn-ghost w-full px-6 py-3 sm:w-auto"
+            className="btn-ghost w-full px-6 py-3.5 sm:w-auto"
           >
-            Join Community
+            Join Community 💬
           </a>
         </div>
-        <Link
-          href="/profile"
-          className="mt-4 text-xs text-white/55 hover:text-white sm:text-sm"
-        >
-          Pay a board from {minSlipPriceText}, or {vipPriceText} for VIP. Nothing is posted free.
-        </Link>
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs sm:text-sm">
+          <Link
+            href="/profile"
+            className="text-white/55 hover:text-white"
+          >
+            Pay a board from {minSlipPriceText}, or {vipPriceText} for VIP.
+          </Link>
+          <span className="hidden text-white/30 sm:inline">·</span>
+          <a
+            href="#reveal-code"
+            className="font-semibold text-fire hover:underline"
+          >
+            Already paid? Reveal your odds →
+          </a>
+        </div>
       </div>
 
       <div className="absolute bottom-6 left-4 flex gap-1.5 md:bottom-36 md:left-auto md:right-10">

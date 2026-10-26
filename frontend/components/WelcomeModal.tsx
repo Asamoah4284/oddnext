@@ -74,13 +74,22 @@ export function WelcomeModal({ stats }: { stats: SiteStats }) {
             <span>⭐ Boards from GHS {minBoardPrice}</span>
           </div>
 
-          <Link
-            href="/profile"
-            onClick={dismiss}
-            className="mt-8 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-star to-amber-300 px-6 py-3 text-sm font-extrabold uppercase tracking-wide text-pitch-dark"
-          >
-            VIP exclusive · GHS {vipPrice}
-          </Link>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3">
+            <Link
+              href="/profile"
+              onClick={dismiss}
+              className="btn-vip w-full px-6 py-3 text-sm font-extrabold uppercase tracking-wide sm:w-auto"
+            >
+              VIP 7-Day Pass · GHS {vipPrice} 👑
+            </Link>
+            <a
+              href="#reveal-code"
+              onClick={dismiss}
+              className="text-xs font-semibold text-white/60 hover:text-fire"
+            >
+              Already paid? Enter reveal code →
+            </a>
+          </div>
         </div>
       </div>
     </div>

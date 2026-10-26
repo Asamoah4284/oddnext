@@ -3,6 +3,7 @@ import { Payment } from "../models/Payment.js";
 import { Tip } from "../models/Tip.js";
 import { User } from "../models/User.js";
 import { dayRange } from "../utils/dates.js";
+import { generateUniqueRevealCode } from "./codes.js";
 import {
   buildOddsMessage,
   extractPayerPhone,
@@ -47,7 +48,8 @@ export async function loadPaidTips(product: string): Promise<PaidSlipTip[]> {
 async function deliverOddsSms(
   phone: string,
   product: string,
-  tips: PaidSlipTip[]
+  tips: PaidSlipTip[],
+  revealCode?: string
 ): Promise<boolean> {
   if (!phone) return false;
   const lines: SlipLine[] = tips.map((tip) => ({
@@ -58,7 +60,7 @@ async function deliverOddsSms(
     bookingCode: tip.bookingCode,
   }));
   try {
-    return await sendMoolreSms(phone, buildOddsMessage(product, lines));
+    return await sendMoolreSms(phone, buildOddsMessage(product, lines, revealCode));
   } catch (err) {
     console.error("Odds SMS failed", err);
     return false;
@@ -90,7 +92,13 @@ export async function fulfillVipPayment(
     rawStatus?: unknown;
     phone?: string;
   }
-): Promise<{ alreadyPaid: boolean; product: string; smsSent: boolean }> {
+): Promise<{
+  alreadyPaid: boolean;
+  product: string;
+  smsSent: boolean;
+  revealCode?: string;
+  vipExpiresAt?: Date | null;
+}> {
   const payment = await Payment.findOne({ externalRef });
   if (!payment) {
     throw new Error("Payment not found");
@@ -111,17 +119,37 @@ export async function fulfillVipPayment(
     user.phone = phone;
   }
 
+  if (!payment.revealCode) {
+    payment.revealCode = await generateUniqueRevealCode(product);
+  }
+  if (product === "vip") {
+    payment.codeType = "vip";
+    payment.maxUnlocks = 999999;
+    if (!payment.vipExpiresAt) {
+      payment.vipExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    }
+  } else {
+    payment.codeType = "single";
+    payment.maxUnlocks = 2;
+  }
+
   if (payment.status === "paid") {
     if (!payment.smsSent) {
       const tips = await loadPaidTips(product);
-      const sent = await deliverOddsSms(phone, product, tips);
+      const sent = await deliverOddsSms(phone, product, tips, payment.revealCode || undefined);
       if (sent) {
         payment.smsSent = true;
       }
     }
     await payment.save();
     if (assignedUserPhone) await user.save();
-    return { alreadyPaid: true, product, smsSent: payment.smsSent };
+    return {
+      alreadyPaid: true,
+      product,
+      smsSent: payment.smsSent,
+      revealCode: payment.revealCode || undefined,
+      vipExpiresAt: payment.vipExpiresAt,
+    };
   }
 
   payment.status = "paid";
@@ -131,18 +159,24 @@ export async function fulfillVipPayment(
 
   if (product === "vip") {
     user.isVip = true;
-    user.vipExpiresAt = null;
+    user.vipExpiresAt = payment.vipExpiresAt;
     await user.save();
   } else if (assignedUserPhone) {
     await user.save();
   }
 
   const tips = await loadPaidTips(product);
-  const smsSent = await deliverOddsSms(phone, product, tips);
+  const smsSent = await deliverOddsSms(phone, product, tips, payment.revealCode || undefined);
   if (smsSent) {
     payment.smsSent = true;
     await payment.save();
   }
 
-  return { alreadyPaid: false, product, smsSent };
+  return {
+    alreadyPaid: false,
+    product,
+    smsSent,
+    revealCode: payment.revealCode || undefined,
+    vipExpiresAt: payment.vipExpiresAt,
+  };
 }

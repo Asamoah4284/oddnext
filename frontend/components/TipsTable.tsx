@@ -13,6 +13,12 @@ import { canAccessBoard, formatProductPrice } from "@/lib/products";
 import { useProducts } from "@/components/ProductsProvider";
 import type { SlipProductId } from "@/lib/products";
 import type { Tip, TipsResponse } from "@/lib/types";
+import {
+  revealCode,
+  lookupCodesByPhone,
+  type RevealResponse,
+  type LookupCodeItem,
+} from "@/lib/codes";
 
 const days = [
   { id: "today", label: "Today" },
@@ -67,6 +73,61 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
   );
   const [data, setData] = useState(initial);
   const [loading, setLoading] = useState(false);
+
+  const [revealedSlip, setRevealedSlip] = useState<RevealResponse | null>(null);
+  const [revealInput, setRevealInput] = useState("");
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
+
+  const [showLookupModal, setShowLookupModal] = useState(false);
+  const [lookupPhoneInput, setLookupPhoneInput] = useState("");
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [foundCodes, setFoundCodes] = useState<LookupCodeItem[] | null>(null);
+  const [copiedClusterCode, setCopiedClusterCode] = useState<string | null>(null);
+
+  const handleReveal = async (codeToUse?: string) => {
+    const target = (codeToUse || revealInput).trim();
+    if (!target) {
+      setRevealError("Please enter your reveal code");
+      return;
+    }
+    setRevealBusy(true);
+    setRevealError(null);
+    try {
+      const res = await revealCode(target);
+      setRevealedSlip(res);
+      if (res.product && res.product !== "vip") {
+        setBoard(res.product as SlipProductId);
+      }
+      setShowLookupModal(false);
+    } catch (err) {
+      setRevealError(err instanceof Error ? err.message : "Failed to reveal odds");
+    } finally {
+      setRevealBusy(false);
+    }
+  };
+
+  const handleLookup = async () => {
+    if (!lookupPhoneInput.trim()) {
+      setLookupError("Enter a phone number to check");
+      return;
+    }
+    setLookupBusy(true);
+    setLookupError(null);
+    setFoundCodes(null);
+    try {
+      const res = await lookupCodesByPhone(lookupPhoneInput);
+      setFoundCodes(res.codes);
+      if (res.codes.length === 0) {
+        setLookupError("No active codes found for this phone number");
+      }
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : "Lookup failed");
+    } finally {
+      setLookupBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!ready) return;
@@ -142,14 +203,20 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
             key={item.id}
             type="button"
             onClick={() => setBoard(item.id)}
-            className={`rounded-full px-3 py-2 text-sm font-semibold ${
+            className={`rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 active:scale-95 ${
               board === item.id
-                ? "bg-fire text-pitch-dark"
-                : "bg-surface text-mute ring-1 ring-line"
+                ? "bg-gradient-to-r from-fire to-emerald-400 text-pitch-dark shadow-[0_0_20px_rgba(34,197,94,0.35)]"
+                : "border border-line bg-surface/80 text-mute hover:border-fire/40 hover:text-cream"
             }`}
           >
             {item.label}
-            <span className="ml-1.5 text-xs opacity-80">{formatProductPrice(item, country)}</span>
+            <span
+              className={`ml-2 text-xs font-semibold ${
+                board === item.id ? "text-pitch-dark/80" : "text-star"
+              }`}
+            >
+              {formatProductPrice(item, country)}
+            </span>
           </button>
         ))}
       </div>
@@ -169,64 +236,154 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
         ))}
       </div>
 
-      {paid?.status === "paid" && (paid.tips?.length ?? 0) > 0 && (
+      {revealedSlip && (
+        <div className="mb-6">
+          <PaidSlip
+            tips={revealedSlip.tips}
+            product={revealedSlip.product}
+            revealCode={revealedSlip.code}
+            remainingUnlocks={revealedSlip.remainingUnlocks}
+            daysRemaining={revealedSlip.daysRemaining}
+            graceMinutes={revealedSlip.graceMinutesRemaining}
+          />
+          <button
+            type="button"
+            onClick={() => setRevealedSlip(null)}
+            className="btn-outline mt-3 text-xs"
+          >
+            Close revealed slip
+          </button>
+        </div>
+      )}
+
+      {paid?.status === "paid" && (paid.tips?.length ?? 0) > 0 && !revealedSlip && (
         <div className="mb-6">
           <PaidSlip
             tips={paid.tips ?? []}
             product={paid.product}
             smsSent={paid.smsSent}
+            revealCode={paid.revealCode}
           />
           <button
             type="button"
             onClick={dismissPaid}
-            className="btn-outline mt-3"
+            className="btn-outline mt-3 text-xs"
           >
             Done · slip stays on SMS only
           </button>
         </div>
       )}
 
-      {!unlocked ? (
-        <div className="card p-6 text-center sm:p-10">
-          <p className="text-xs font-medium text-fire">{selected.label}</p>
-          <h3 className="mt-2 font-sans text-2xl font-extrabold tracking-tight">
-            Pay {formatProductPrice(selected, country)} for this board.
-          </h3>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-mute">
-            Picks, odds, and booking codes stay hidden until you pay this board — or
-            unlock every board with VIP for {formatProductPrice(vipProduct, country)}.
-          </p>
-          <div className="mx-auto mt-5 max-w-sm text-left">
-            <PhoneField
-              value={phone}
-              onChange={setPhone}
-              country={country}
-              onCountryChange={setCountry}
-            />
+      {!unlocked && !revealedSlip ? (
+        <div className="card relative overflow-hidden p-6 text-center sm:p-10">
+          <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-fire/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-star/10 blur-3xl" />
+
+          <div className="relative">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-fire/15 px-3 py-1 text-xs font-bold uppercase tracking-wider text-fire ring-1 ring-fire/30">
+              🔒 {selected.label} Banker Vault
+            </span>
+            <h3 className="mt-3 font-sans text-2xl font-black tracking-tight text-white sm:text-4xl">
+              Pay {formatProductPrice(selected, country)} to unlock this board.
+            </h3>
+            <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-mute sm:text-base">
+              SportyBet and BetPawa codes, handicap bankers, and kickoff picks stay hidden until you pay — or unlock every board for 7 days with VIP for {formatProductPrice(vipProduct, country)}.
+            </p>
+
+            <div className="mx-auto mt-6 max-w-sm text-left">
+              <p className="mb-1.5 text-xs font-semibold text-mute">Your Mobile Money Number</p>
+              <PhoneField
+                value={phone}
+                onChange={setPhone}
+                country={country}
+                onCountryChange={setCountry}
+              />
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => void startPay(selected.id)}
+                disabled={Boolean(busy)}
+                className="btn-primary min-w-[200px]"
+              >
+                {busy === selected.id
+                  ? "Opening checkout…"
+                  : `Unlock ${selected.label} · ${formatProductPrice(selected, country)}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => void startPay("vip")}
+                disabled={Boolean(busy)}
+                className="btn-vip min-w-[200px]"
+              >
+                {busy === "vip"
+                  ? "Opening checkout…"
+                  : `7-Day VIP · ${formatProductPrice(vipProduct, country)} 👑`}
+              </button>
+            </div>
+            {error && <p className="mt-4 text-sm text-lost">{error}</p>}
+
+            {/* Reveal Code Section */}
+            <div className="relative my-8 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-line/80" />
+              </div>
+              <span className="relative rounded-full border border-line bg-surface px-4 py-1 text-xs font-bold uppercase tracking-wider text-mute">
+                Already paid? Enter reveal code
+              </span>
+            </div>
+
+            <div id="reveal-code" className="mx-auto max-w-sm rounded-2xl border border-fire/30 bg-paper/90 p-5 text-left shadow-lg ring-1 ring-fire/20">
+              <label htmlFor="reveal-input" className="flex items-center gap-1.5 text-xs font-bold text-cream">
+                <span>🔑</span> Enter Reveal / VIP Code
+              </label>
+              <div className="mt-2 flex gap-2">
+                <input
+                  id="reveal-input"
+                  type="text"
+                  value={revealInput}
+                  onChange={(e) => {
+                    setRevealInput(e.target.value.toUpperCase());
+                    setRevealError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      void handleReveal();
+                    }
+                  }}
+                  placeholder="e.g. ODD-12345 or VIP-12345"
+                  className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 font-mono text-sm uppercase tracking-wider text-cream focus:border-fire focus:ring-1 focus:ring-fire/30 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleReveal()}
+                  disabled={revealBusy || !revealInput.trim()}
+                  className="btn-primary whitespace-nowrap px-4 py-2.5 text-xs font-bold"
+                >
+                  {revealBusy ? "Checking…" : "Unlock"}
+                </button>
+              </div>
+              {revealError && (
+                <p className="mt-2 text-xs font-medium text-lost">{revealError}</p>
+              )}
+              <div className="mt-3 flex items-center justify-between border-t border-line/60 pt-2 text-xs text-mute">
+                <span>Forgot your code?</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLookupModal(true);
+                    setLookupError(null);
+                    setFoundCodes(null);
+                    if (phone) setLookupPhoneInput(phone);
+                  }}
+                  className="font-bold text-fire hover:underline"
+                >
+                  Find by phone number →
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => void startPay(selected.id)}
-              disabled={Boolean(busy)}
-              className="btn-primary"
-            >
-              {busy === selected.id
-                ? "Opening checkout…"
-                : `Unlock ${selected.label} · ${formatProductPrice(selected, country)}`}
-            </button>
-            <button
-              type="button"
-              onClick={() => void startPay("vip")}
-              disabled={Boolean(busy)}
-              className="btn-outline"
-            >
-              {busy === "vip"
-                ? "Opening checkout…"
-                : `VIP all boards · ${formatProductPrice(vipProduct, country)}`}
-            </button>
-          </div>
-          {error && <p className="mt-4 text-sm text-lost">{error}</p>}
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-line bg-surface">
@@ -274,9 +431,22 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
               {cluster.code && (
                 <div className="flex items-center justify-between bg-paper/80 px-4 py-2.5">
                   <span className="text-xs text-mute">Booking code</span>
-                  <span className="rounded-lg bg-fire/10 px-2 py-1 font-mono text-sm font-semibold text-star">
-                    {cluster.code}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-lg bg-fire/10 px-2 py-1 font-mono text-sm font-semibold text-star">
+                      {cluster.code}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(cluster.code);
+                        setCopiedClusterCode(cluster.code);
+                        setTimeout(() => setCopiedClusterCode(null), 2000);
+                      }}
+                      className="rounded-md bg-surface px-2.5 py-1 text-xs font-semibold text-mute hover:border-fire/40 hover:text-cream"
+                    >
+                      {copiedClusterCode === cluster.code ? "✓ Copied" : "Copy"}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -289,6 +459,112 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
           onClose={closeCheckout}
           onPaid={onPaid}
         />
+      )}
+
+      {/* Phone Lookup Modal */}
+      {showLookupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-md rounded-3xl border border-line bg-paper p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-fire">
+                  Retrieve Your Code
+                </p>
+                <h3 className="mt-1 font-sans text-xl font-extrabold text-cream">
+                  Check by Phone Number
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLookupModal(false)}
+                className="rounded-full p-2 text-mute hover:bg-surface hover:text-cream"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="mt-2 text-xs leading-relaxed text-mute">
+              Enter the Mobile Money phone number you used when paying. Any active single or VIP codes will be listed below.
+            </p>
+
+            <div className="mt-4 flex gap-2">
+              <input
+                type="tel"
+                value={lookupPhoneInput}
+                onChange={(e) => {
+                  setLookupPhoneInput(e.target.value);
+                  setLookupError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    void handleLookup();
+                  }
+                }}
+                placeholder="e.g. 0244123456"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-cream focus:border-fire focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => void handleLookup()}
+                disabled={lookupBusy || !lookupPhoneInput.trim()}
+                className="btn-primary whitespace-nowrap px-4 py-2 text-xs"
+              >
+                {lookupBusy ? "Searching…" : "Search"}
+              </button>
+            </div>
+
+            {lookupError && (
+              <p className="mt-3 text-xs text-lost">{lookupError}</p>
+            )}
+
+            {foundCodes && foundCodes.length > 0 && (
+              <div className="mt-5 space-y-2">
+                <p className="text-xs font-semibold text-cream">Active codes found:</p>
+                <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+                  {foundCodes.map((c) => (
+                    <div
+                      key={c.code}
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface/60 p-3"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-black tracking-wide text-star">
+                            {c.code}
+                          </span>
+                          <span className="rounded bg-fire/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-fire">
+                            {c.type === "vip" ? "VIP" : c.product}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-mute">
+                          {c.type === "vip"
+                            ? `${c.daysRemaining} days left`
+                            : `${c.remainingUnlocks} use${c.remainingUnlocks === 1 ? "" : "s"} left`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleReveal(c.code)}
+                        className="rounded-xl bg-fire/20 px-3 py-1.5 text-xs font-bold text-fire hover:bg-fire hover:text-pitch-dark"
+                      >
+                        Use Code
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowLookupModal(false)}
+                className="btn-outline text-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );

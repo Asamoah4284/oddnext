@@ -21,35 +21,45 @@ function WinRing({ value }: { value: number }) {
 
 export function StatsGrid({ stats }: { stats: SiteStats }) {
   const items = [
-    { label: "Tips this month", value: String(stats.monthlyTips) },
-    { label: "VIP members", value: compactCount(stats.vipMembers) },
-    { label: "Telegram", value: compactCount(stats.telegramCount) },
+    { label: "Tips this month", value: String(stats.monthlyTips), icon: "⚽" },
+    { label: "VIP members", value: compactCount(stats.vipMembers), icon: "👑" },
+    { label: "Telegram", value: compactCount(stats.telegramCount), icon: "💬" },
   ];
 
   return (
-    <section className="relative z-10 mx-auto -mt-10 max-w-6xl px-4 md:-mt-20">
-      <div className="rounded-2xl border border-line bg-surface p-3 shadow-slip sm:p-4">
-        <div className="flex items-center gap-3 rounded-xl bg-paper px-3 py-3">
-          <WinRing value={stats.winRate} />
-          <div className="min-w-0 font-sans tracking-normal">
-            <p className="text-xs text-mute">Win rate</p>
-            <p className="text-base font-bold leading-tight sm:text-lg">
-              {stats.winRate}% landed
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {items.map((item) => (
-            <div key={item.label} className="rounded-xl bg-paper px-2 py-3 text-center">
-              <p className="font-sans text-[11px] leading-tight tracking-normal text-mute">
-                {item.label}
-              </p>
-              <p className="mt-1 font-sans text-lg font-extrabold tracking-tight text-cream sm:text-2xl">
-                {item.value}
+    <section className="relative z-10 mx-auto -mt-10 max-w-6xl px-4 md:-mt-16">
+      <div className="rounded-3xl border border-line/80 bg-surface/90 p-4 shadow-slip backdrop-blur-xl sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3.5 rounded-2xl bg-paper/90 px-4 py-3 ring-1 ring-white/5">
+            <WinRing value={stats.winRate} />
+            <div className="min-w-0 font-sans tracking-normal">
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-fire animate-pulse" />
+                <p className="text-xs font-semibold text-mute">Verified banker rate</p>
+              </div>
+              <p className="text-lg font-extrabold leading-tight text-white sm:text-xl">
+                {stats.winRate}% Tips Landed
               </p>
             </div>
-          ))}
+          </div>
+
+          <div className="grid flex-1 grid-cols-3 gap-2">
+            {items.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-2xl border border-line/40 bg-paper/70 px-2 py-3 text-center transition hover:border-fire/30 sm:px-3"
+              >
+                <p className="flex items-center justify-center gap-1 font-sans text-[11px] font-medium leading-tight tracking-normal text-mute">
+                  <span>{item.icon}</span>
+                  <span className="hidden sm:inline">{item.label}</span>
+                  <span className="sm:hidden">{item.label.split(" ")[0]}</span>
+                </p>
+                <p className="mt-1 font-sans text-lg font-black tracking-tight text-cream sm:text-2xl">
+                  {item.value}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>

@@ -106,7 +106,11 @@ export type SlipLine = {
   bookingCode?: string;
 };
 
-export function buildOddsMessage(productId: string, tips: SlipLine[]): string {
+export function buildOddsMessage(
+  productId: string,
+  tips: SlipLine[],
+  revealCode?: string
+): string {
   const product = getProduct(productId);
   const label = product?.label ?? "VIP";
   const lines = tips.slice(0, 8).map(
@@ -115,8 +119,9 @@ export function buildOddsMessage(productId: string, tips: SlipLine[]): string {
   const codes = [
     ...new Set(tips.map((tip) => tip.bookingCode).filter(Boolean)),
   ];
-  const codeLine = codes.length ? `\nCode: ${codes.join(", ")}` : "";
-  return `Oddnext ${label} unlocked.\n${lines.join("\n") || "Open the site for today's slip."}${codeLine}`;
+  const codeLine = codes.length ? `\nBooking code: ${codes.join(", ")}` : "";
+  const revealLine = revealCode ? `\nYour Unlock Code: ${revealCode}` : "";
+  return `Oddnext ${label} unlocked.\n${lines.join("\n") || "Open the site for today's slip."}${codeLine}${revealLine}`;
 }
 
 export async function sendMoolreSms(
