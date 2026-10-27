@@ -1219,30 +1219,32 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
           <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
-                { id: "all", label: "All Payouts", count: payouts.length },
+                { id: "all" as const, label: "All Payouts", count: payouts.length, badgeColor: "" },
                 {
-                  id: "pending",
+                  id: "pending" as const,
                   label: "Pending",
                   count: payouts.filter((p) => p.status === "pending").length,
                   badgeColor: "bg-amber-100 text-amber-800",
                 },
                 {
-                  id: "paid",
+                  id: "paid" as const,
                   label: "Paid",
                   count: payouts.filter((p) => p.status === "paid").length,
                   badgeColor: "bg-emerald-100 text-emerald-800",
                 },
                 {
-                  id: "Forson",
+                  id: "Forson" as const,
                   label: "Forson (60%)",
                   count: payouts.filter((p) => p.recipient === "Forson").length,
+                  badgeColor: "",
                 },
                 {
-                  id: "Asamoah",
+                  id: "Asamoah" as const,
                   label: "Asamoah (40%)",
                   count: payouts.filter((p) => p.recipient === "Asamoah").length,
+                  badgeColor: "",
                 },
-              ] as const
+              ]
             ).map((tab) => (
               <button
                 key={tab.id}
