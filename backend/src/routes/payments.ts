@@ -61,7 +61,7 @@ function resolvePayCountry(phone: string, requested?: PayCountry): PayCountry {
   );
 }
 
-function originFromValue(value?: string): string | null {
+function originFromValue(value?: string | null): string | null {
   if (!value) return null;
   try {
     return new URL(value).origin;
@@ -71,20 +71,35 @@ function originFromValue(value?: string): string | null {
 }
 
 function resolveReturnOrigin(req: AuthedRequest, requested?: string): string {
-  const fallback = config.frontendUrl.replace(/\/$/, "");
-  const allowed = new Set([
+  const fallback = (
+    process.env.PUBLIC_FRONTEND_URL ||
+    (config.frontendUrl.startsWith("https://") ? config.frontendUrl : "https://oddnext.vercel.app")
+  ).replace(/\/$/, "");
+
+  const refererOrigin = originFromValue(req.headers.referer);
+  const candidates = [
+    requested,
+    req.headers.origin,
+    refererOrigin,
     fallback,
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-  ]);
-  const candidates = [requested, req.headers.origin, fallback];
+    config.frontendUrl,
+  ];
+
   for (const item of candidates) {
     const origin = originFromValue(item);
     if (!origin) continue;
-    if (allowed.has(origin) || (config.isDev && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))) {
+
+    // Accept any valid HTTPS origin (e.g. oddnext.vercel.app or custom domain)
+    if (origin.startsWith("https://")) {
+      return origin;
+    }
+
+    // Accept localhost / 127.0.0.1 in local development
+    if (config.isDev && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
       return origin;
     }
   }
+
   return fallback;
 }
 
@@ -383,9 +398,11 @@ paymentsRouter.post(
         "https://oddnext.onrender.com";
       const publicFrontend =
         process.env.PUBLIC_FRONTEND_URL ||
-        (config.frontendUrl.startsWith("https://") && !config.frontendUrl.includes("localhost")
+        (returnOrigin.startsWith("https://")
+          ? returnOrigin
+          : config.frontendUrl.startsWith("https://") && !config.frontendUrl.includes("localhost")
           ? config.frontendUrl
-          : "https://oddnext.onrender.com");
+          : "https://oddnext.vercel.app");
 
       const callbackBase = process.env.CALLBACK_URL || publicBackend;
       const callback = callbackBase.includes("/api/payments/webhook")

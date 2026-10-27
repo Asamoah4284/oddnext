@@ -152,12 +152,25 @@ export function useMoolrePay() {
           throw new Error("Checkout did not return a payment link.");
         }
         storePayRef(data.reference);
+
+        let safeAuthUrl = data.authorization_url;
+        if (
+          typeof window !== "undefined" &&
+          !window.location.hostname.includes("localhost") &&
+          !window.location.hostname.includes("127.0.0.1")
+        ) {
+          safeAuthUrl = safeAuthUrl.replace(
+            /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i,
+            window.location.origin
+          );
+        }
+
         if (data.provider === "paystack") {
-          window.location.assign(data.authorization_url);
+          window.location.assign(safeAuthUrl);
           return;
         }
         setCheckout({
-          authorizationUrl: data.authorization_url,
+          authorizationUrl: safeAuthUrl,
           reference: data.reference,
           token: nextToken ?? null,
         });
