@@ -51,7 +51,7 @@ export function PhoneField({
       />
       <span className="mt-1.5 block text-xs text-mute">
         {nigeria
-          ? "Nigeria pays with Paystack (card, bank, or USSD). The slip SMS goes here."
+          ? "Nigeria pays with Opay direct transfer (7082511762). Upload proof for instant activation. Slip SMS goes here."
           : "Ghana numbers pay in cedis. The slip SMS goes to this number."}
       </span>
     </label>

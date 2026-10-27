@@ -21,32 +21,32 @@ const productMeta: Record<
   odds10: {
     tag: "Banker Slip",
     description: "Daily high-confidence 10 odds accumulator",
-    badgeColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    badgeColor: "bg-slate-100 text-slate-700 border-slate-200",
   },
   odds50: {
     tag: "Mid Acca",
     description: "High-value 50 odds accumulator",
-    badgeColor: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+    badgeColor: "bg-slate-100 text-slate-700 border-slate-200",
   },
   odds100: {
     tag: "Mega Slip",
     description: "Massive 100+ odds monster accumulator",
-    badgeColor: "bg-purple-500/10 text-purple-400 border-purple-500/30",
+    badgeColor: "bg-slate-100 text-slate-700 border-slate-200",
   },
   draw: {
     tag: "Draws",
     description: "Full-time draw games and stalemate predictions",
-    badgeColor: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    badgeColor: "bg-slate-100 text-slate-700 border-slate-200",
   },
   correctScore: {
     tag: "Exact Score",
     description: "Precision correct score predictions",
-    badgeColor: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+    badgeColor: "bg-slate-100 text-slate-700 border-slate-200",
   },
   vip: {
     tag: "All Access",
     description: "Unlocks every daily board + SportyBet booking codes",
-    badgeColor: "bg-fire/20 text-fire border-fire/40",
+    badgeColor: "bg-slate-900 text-white border-slate-900",
   },
 };
 

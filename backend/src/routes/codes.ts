@@ -21,15 +21,42 @@ codesRouter.post("/reveal", async (req, res, next) => {
     const { code, deviceId } = revealSchema.parse(req.body);
     const normalized = normalizeRevealCode(code);
 
-    const payment = await Payment.findOne({
+    let payment = await Payment.findOne({
       revealCode: normalized,
       status: "paid",
     });
 
     if (!payment) {
+      const coreDigits = extractCorePhoneDigits(code);
+      if (coreDigits.length >= 7) {
+        const regex = new RegExp(`${coreDigits}$`);
+        payment = await Payment.findOne({
+          phone: regex,
+          status: "paid",
+        }).sort({ createdAt: -1 });
+
+        if (!payment) {
+          const pending = await Payment.findOne({
+            phone: regex,
+            status: { $in: ["proof_submitted", "pending"] },
+          }).sort({ createdAt: -1 });
+
+          if (pending) {
+            throw new HttpError(
+              400,
+              pending.status === "proof_submitted"
+                ? "Your transfer proof is currently awaiting admin approval. As soon as the admin verifies your payment, entering your phone number will unlock your odds!"
+                : "Your payment is currently pending confirmation. Once approved, entering your phone number will unlock your odds here."
+            );
+          }
+        }
+      }
+    }
+
+    if (!payment) {
       throw new HttpError(
         404,
-        "Code not found or payment not completed. Please check your code or search by phone."
+        "No active paid odds found for this phone number or reveal code. Please check your digits or search by phone."
       );
     }
 
@@ -216,10 +243,27 @@ codesRouter.post("/lookup", async (req, res, next) => {
         };
       });
 
+    const pendingTransfers = await Payment.find({
+      phone: regex,
+      status: { $in: ["proof_submitted", "pending"] },
+      provider: { $in: ["opay", "manual"] },
+    }).sort({ createdAt: -1 });
+
+    const pendingList = pendingTransfers.map((p) => ({
+      reference: p.externalRef,
+      product: p.product,
+      amount: p.amount,
+      currency: p.currency || "NGN",
+      status: p.status,
+      proofSubmitted: Boolean(p.proofImage),
+      createdAt: p.createdAt,
+    }));
+
     res.json({
       ok: true,
       count: activeCodes.length,
       codes: activeCodes,
+      pending: pendingList,
     });
   } catch (err) {
     next(err);

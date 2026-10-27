@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { MoolreCheckout } from "@/components/MoolreCheckout";
+import { NigeriaPaymentModal } from "@/components/NigeriaPaymentModal";
 import { PaidSlip } from "@/components/PaidSlip";
 import { PhoneField } from "@/components/PhoneField";
 import { fetchTips } from "@/lib/api";
@@ -18,6 +19,7 @@ import {
   lookupCodesByPhone,
   type RevealResponse,
   type LookupCodeItem,
+  type LookupPendingItem,
 } from "@/lib/codes";
 
 const days = [
@@ -54,11 +56,13 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
     country,
     setCountry,
     checkout,
+    opayCheckout,
     paid,
     startPay,
     handlePaid,
     dismissPaid,
     closeCheckout,
+    closeOpayCheckout,
   } = useMoolrePay();
   const [tab, setTab] = useState<TipsResponse["tab"]>(initial.tab);
   const [board, setBoard] = useState<SlipProductId>(initial.board || "odds10");
@@ -94,12 +98,13 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [foundCodes, setFoundCodes] = useState<LookupCodeItem[] | null>(null);
+  const [foundPending, setFoundPending] = useState<LookupPendingItem[] | null>(null);
   const [copiedClusterCode, setCopiedClusterCode] = useState<string | null>(null);
 
   const handleReveal = async (codeToUse?: string) => {
     const target = (codeToUse || revealInput).trim();
     if (!target) {
-      setRevealError("Please enter your reveal code");
+      setRevealError("Please enter your phone number or reveal code");
       return;
     }
     setRevealBusy(true);
@@ -107,10 +112,11 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
     try {
       const res = await revealCode(target);
       setRevealedSlip(res);
+      const codeKey = res.code || target;
       if (typeof window !== "undefined") {
-        localStorage.setItem("oddnext_reveal_code", target);
+        localStorage.setItem("oddnext_reveal_code", codeKey);
       }
-      setActiveCode(target);
+      setActiveCode(codeKey);
       if (res.product && res.product !== "vip") {
         setBoard(res.product as SlipProductId);
       }
@@ -138,10 +144,12 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
     setLookupBusy(true);
     setLookupError(null);
     setFoundCodes(null);
+    setFoundPending(null);
     try {
       const res = await lookupCodesByPhone(lookupPhoneInput);
       setFoundCodes(res.codes);
-      if (res.codes.length === 0) {
+      setFoundPending(res.pending || null);
+      if (res.codes.length === 0 && (!res.pending || res.pending.length === 0)) {
         setLookupError("No active codes found for this phone number");
       }
     } catch (err) {
@@ -372,15 +380,18 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                 <div className="w-full border-t border-line/80" />
               </div>
               <span className="relative rounded-full border border-line bg-surface px-4 py-1 text-xs font-bold uppercase tracking-wider text-mute">
-                Already paid? Enter reveal code
+                Already paid? Unlock with phone or code
               </span>
             </div>
 
             <div id="reveal-code" className="mx-auto max-w-sm rounded-2xl border border-fire/30 bg-paper/90 p-5 text-left shadow-lg ring-1 ring-fire/20">
               <label htmlFor="reveal-input" className="flex items-center gap-1.5 text-xs font-bold text-cream">
-                <span>🔑</span> Enter Reveal / VIP Code
+                <span>🔑</span> Enter Phone Number or Reveal Code
               </label>
-              <div className="mt-2 flex gap-2">
+              <p className="mt-1 text-[11px] text-mute">
+                Paid in Nigeria or Ghana? Enter the phone number you paid with to see your odds.
+              </p>
+              <div className="mt-2.5 flex gap-2">
                 <input
                   id="reveal-input"
                   type="text"
@@ -394,7 +405,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                       void handleReveal();
                     }
                   }}
-                  placeholder="e.g. ODD-12345 or VIP-12345"
+                  placeholder="e.g. 07082511762 or VIP-12345"
                   className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 font-mono text-sm uppercase tracking-wider text-cream focus:border-fire focus:ring-1 focus:ring-fire/30 focus:outline-none"
                 />
                 <button
@@ -403,14 +414,14 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                   disabled={revealBusy || !revealInput.trim()}
                   className="btn-primary whitespace-nowrap px-4 py-2.5 text-xs font-bold"
                 >
-                  {revealBusy ? "Checking…" : "Unlock"}
+                  {revealBusy ? "Checking…" : "View Odds"}
                 </button>
               </div>
               {revealError && (
                 <p className="mt-2 text-xs font-medium text-lost">{revealError}</p>
               )}
               <div className="mt-3 flex items-center justify-between border-t border-line/60 pt-2 text-xs text-mute">
-                <span>Forgot your code?</span>
+                <span>Checking payment status?</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -421,7 +432,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                   }}
                   className="font-bold text-fire hover:underline"
                 >
-                  Find by phone number →
+                  Check by phone number →
                 </button>
               </div>
             </div>
@@ -502,6 +513,13 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
           onPaid={onPaid}
         />
       )}
+      {opayCheckout && (
+        <NigeriaPaymentModal
+          session={opayCheckout}
+          onClose={closeOpayCheckout}
+          onPaid={onPaid}
+        />
+      )}
 
       {/* Phone Lookup Modal */}
       {showLookupModal && (
@@ -557,6 +575,28 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
 
             {lookupError && (
               <p className="mt-3 text-xs text-lost">{lookupError}</p>
+            )}
+
+            {foundPending && foundPending.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+                  <span>⏳</span>
+                  <span>Payment Under Admin Review</span>
+                </div>
+                {foundPending.map((p) => (
+                  <div key={p.reference} className="text-[11px] text-cream/90 font-mono bg-surface/60 rounded-xl p-2.5 border border-line">
+                    <p className="font-bold text-cream">
+                      {p.product.toUpperCase()} Transfer ({p.currency} {Number(p.amount).toLocaleString()})
+                    </p>
+                    <p className="text-mute text-[10px] mt-0.5">
+                      Ref: {p.reference} · {p.proofSubmitted ? "Proof received" : "Awaiting proof"}
+                    </p>
+                    <p className="text-amber-400 text-[10px] mt-1">
+                      Our admin is verifying your Opay transfer. Once approved, your odds SMS and reveal code will be activated!
+                    </p>
+                  </div>
+                ))}
+              </div>
             )}
 
             {foundCodes && foundCodes.length > 0 && (

@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Manrope, Oswald } from "next/font/google";
+import { IBM_Plex_Mono, Montserrat, Oswald } from "next/font/google";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ProductsProvider } from "@/components/ProductsProvider";
 import { BRAND_NAME, SITE_URL, fetchProducts } from "@/lib/api";
 import "./globals.css";
 
-const sans = Manrope({
+const sans = Montserrat({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: ["400", "500", "600", "700", "800", "900"],
   variable: "--font-sans",
 });
 

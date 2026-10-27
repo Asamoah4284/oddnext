@@ -118,6 +118,11 @@ function PaymentReturnInner() {
           await refresh();
           return true;
         }
+        if (result.status === "proof_submitted") {
+          setStatus("pending");
+          setMessage("Payment proof received! ⏳ Our admin is reviewing your Opay transfer. Once approved, your odds will unlock immediately.");
+          return false;
+        }
         setStatus("pending");
         setMessage("Waiting for payment to confirm…");
         return false;

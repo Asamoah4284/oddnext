@@ -14,6 +14,7 @@ import {
 } from "../products.js";
 import { config } from "../config.js";
 import { Payment } from "../models/Payment.js";
+import { Payout } from "../models/Payout.js";
 import { fulfillVipPayment } from "../services/vip.js";
 import { HttpError } from "../utils/httpError.js";
 
@@ -456,11 +457,13 @@ adminRouter.get("/payments/analytics", async (_req, res, next) => {
 
     let paidCount = 0;
     let pendingCount = 0;
+    let proofSubmittedCount = 0;
     let failedCount = 0;
     let totalCount = 0;
     for (const s of statusCounts) {
       if (s._id === "paid") paidCount = s.count;
       else if (s._id === "pending") pendingCount = s.count;
+      else if (s._id === "proof_submitted") proofSubmittedCount = s.count;
       else if (s._id === "failed") failedCount = s.count;
       totalCount += s.count;
     }
@@ -568,6 +571,7 @@ adminRouter.get("/payments/analytics", async (_req, res, next) => {
         statusCounts: {
           paid: paidCount,
           pending: pendingCount,
+          proofSubmitted: proofSubmittedCount,
           failed: failedCount,
           total: totalCount,
           successRate,
@@ -641,6 +645,10 @@ adminRouter.get("/payments", async (req, res, next) => {
         provider: p.provider || "moolre",
         status: p.status,
         phone: p.phone,
+        proofImage: p.proofImage || "",
+        proofNote: p.proofNote || "",
+        proofSubmittedAt: p.proofSubmittedAt || null,
+        revealCode: p.revealCode || "",
         smsSent: p.smsSent,
         slipViewed: p.slipViewed,
         createdAt: p.createdAt,
@@ -688,14 +696,81 @@ adminRouter.patch("/payments/:id/mark-paid", async (req, res, next) => {
       });
     }
 
-    await fulfillVipPayment(payment.externalRef);
+    const fulfilled = await fulfillVipPayment(payment.externalRef);
     const updated = await Payment.findById(payment._id).populate(
       "userId",
       "name email phone"
     );
     res.json({
       payment: updated,
-      message: "Payment marked as paid and access granted",
+      fulfilled,
+      message: "Payment approved, access granted, and odds SMS dispatched.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.patch("/payments/:id/approve", async (req, res, next) => {
+  try {
+    const payment = await Payment.findById(req.params.id);
+    if (!payment) throw new HttpError(404, "Payment not found");
+    if (payment.status === "paid") {
+      return res.json({
+        payment,
+        message: "Payment was already approved and paid",
+      });
+    }
+
+    const fulfilled = await fulfillVipPayment(payment.externalRef);
+    const updated = await Payment.findById(payment._id).populate(
+      "userId",
+      "name email phone"
+    );
+    res.json({
+      payment: updated,
+      fulfilled,
+      message: "Payment approved, odds activated, and SMS sent to user.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.patch("/payments/:id/reject", async (req, res, next) => {
+  try {
+    const payment = await Payment.findById(req.params.id);
+    if (!payment) throw new HttpError(404, "Payment not found");
+    payment.status = "failed";
+    await payment.save();
+    const updated = await Payment.findById(payment._id).populate(
+      "userId",
+      "name email phone"
+    );
+    res.json({
+      payment: updated,
+      message: "Payment rejected and marked as failed.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.delete("/payments/:id", async (req, res, next) => {
+  try {
+    const payment = await Payment.findById(req.params.id);
+    if (!payment) throw new HttpError(404, "Payment not found");
+    if (payment.status === "paid") {
+      throw new HttpError(
+        400,
+        "Cannot delete a paid transaction. Only pending or awaiting approval transactions can be deleted."
+      );
+    }
+
+    await Payment.findByIdAndDelete(payment._id);
+    res.json({
+      message: "Transaction deleted successfully.",
+      deletedId: req.params.id,
     });
   } catch (err) {
     next(err);
@@ -715,4 +790,276 @@ adminRouter.delete("/payments", async (_req, res, next) => {
     next(err);
   }
 });
+
+// ==========================================
+// ADMIN SPLIT PAYOUTS & DISBURSEMENTS
+// ==========================================
+
+const payoutRequestSchema = z.object({
+  recipient: z.enum(["Forson", "Asamoah"]),
+  amount: z.coerce.number().positive("Amount must be greater than 0"),
+  currency: z.enum(["GHS", "NGN"]).default("GHS"),
+  method: z.enum(["mobile_money", "bank"]),
+  network: z.string().trim().optional(),
+  phone: z.string().trim().optional(),
+  bankName: z.string().trim().optional(),
+  accountNumber: z.string().trim().optional(),
+  accountName: z.string().trim().min(2, "Account holder name is required"),
+  branch: z.string().trim().optional(),
+  notes: z.string().trim().optional(),
+});
+
+adminRouter.get("/payouts", async (_req, res, next) => {
+  try {
+    // 1. Compute all-time split earnings from settled paid payments
+    const paidPayments = await Payment.find({ status: "paid" }).select("amount currency");
+    let grossGhs = 0;
+    let grossNgn = 0;
+    for (const p of paidPayments) {
+      if ((p.currency || "GHS").toUpperCase() === "NGN") {
+        grossNgn += p.amount || 0;
+      } else {
+        grossGhs += p.amount || 0;
+      }
+    }
+    const forsonTotalEarnedGhs = Math.round(grossGhs * 0.6 * 100) / 100;
+    const forsonTotalEarnedNgn = Math.round(grossNgn * 0.6 * 100) / 100;
+    const asamoahTotalEarnedGhs = Math.round(grossGhs * 0.4 * 100) / 100;
+    const asamoahTotalEarnedNgn = Math.round(grossNgn * 0.4 * 100) / 100;
+
+    // 2. Fetch all payout records
+    const payouts = await Payout.find().sort({ createdAt: -1 });
+
+    // 3. Compute paid & pending sums for each split admin
+    let forsonPaidGhs = 0, forsonPaidNgn = 0;
+    let forsonPendingGhs = 0, forsonPendingNgn = 0;
+    let asamoahPaidGhs = 0, asamoahPaidNgn = 0;
+    let asamoahPendingGhs = 0, asamoahPendingNgn = 0;
+
+    for (const po of payouts) {
+      const isForson = po.recipient === "Forson";
+      const isNgn = (po.currency || "GHS").toUpperCase() === "NGN";
+      const amt = po.amount || 0;
+
+      if (po.status === "paid") {
+        if (isForson) {
+          if (isNgn) forsonPaidNgn += amt;
+          else forsonPaidGhs += amt;
+        } else {
+          if (isNgn) asamoahPaidNgn += amt;
+          else asamoahPaidGhs += amt;
+        }
+      } else if (po.status === "pending") {
+        if (isForson) {
+          if (isNgn) forsonPendingNgn += amt;
+          else forsonPendingGhs += amt;
+        } else {
+          if (isNgn) asamoahPendingNgn += amt;
+          else asamoahPendingGhs += amt;
+        }
+      }
+    }
+
+    const round = (val: number) => Math.round(val * 100) / 100;
+
+    const summary = {
+      forson: {
+        earnedGhs: round(forsonTotalEarnedGhs),
+        earnedNgn: round(forsonTotalEarnedNgn),
+        paidGhs: round(forsonPaidGhs),
+        paidNgn: round(forsonPaidNgn),
+        pendingGhs: round(forsonPendingGhs),
+        pendingNgn: round(forsonPendingNgn),
+        availableGhs: round(Math.max(0, forsonTotalEarnedGhs - forsonPaidGhs - forsonPendingGhs)),
+        availableNgn: round(Math.max(0, forsonTotalEarnedNgn - forsonPaidNgn - forsonPendingNgn)),
+      },
+      asamoah: {
+        earnedGhs: round(asamoahTotalEarnedGhs),
+        earnedNgn: round(asamoahTotalEarnedNgn),
+        paidGhs: round(asamoahPaidGhs),
+        paidNgn: round(asamoahPaidNgn),
+        pendingGhs: round(asamoahPendingGhs),
+        pendingNgn: round(asamoahPendingNgn),
+        availableGhs: round(Math.max(0, asamoahTotalEarnedGhs - asamoahPaidGhs - asamoahPendingGhs)),
+        availableNgn: round(Math.max(0, asamoahTotalEarnedNgn - asamoahPaidNgn - asamoahPendingNgn)),
+      },
+    };
+
+    const serialized = payouts.map((p) => ({
+      id: p._id.toString(),
+      recipient: p.recipient,
+      splitPercentage: p.splitPercentage,
+      amount: p.amount,
+      currency: p.currency,
+      method: p.method,
+      network: p.network || "",
+      phone: p.phone || "",
+      bankName: p.bankName || "",
+      accountNumber: p.accountNumber || "",
+      accountName: p.accountName || "",
+      branch: p.branch || "",
+      notes: p.notes || "",
+      status: p.status,
+      requestedBy: p.requestedBy || "",
+      paidAt: p.paidAt || null,
+      paidBy: p.paidBy || "",
+      paidReference: p.paidReference || "",
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    }));
+
+    res.json({
+      payouts: serialized,
+      summary,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.post("/payouts", async (req: AuthedRequest, res, next) => {
+  try {
+    const body = payoutRequestSchema.parse(req.body);
+
+    if (body.method === "mobile_money") {
+      if (!body.phone || body.phone.length < 8) {
+        throw new HttpError(400, "Mobile Money phone number is required (min 8 digits)");
+      }
+      if (!body.network) {
+        throw new HttpError(400, "Mobile Money network provider is required");
+      }
+    } else if (body.method === "bank") {
+      if (!body.bankName) {
+        throw new HttpError(400, "Bank name is required");
+      }
+      if (!body.accountNumber || body.accountNumber.length < 6) {
+        throw new HttpError(400, "Bank account number is required (min 6 digits)");
+      }
+    }
+
+    const splitPercentage = body.recipient === "Forson" ? 60 : 40;
+    const requestedBy = req.user?.name || req.user?.email || body.recipient;
+
+    const payout = await Payout.create({
+      recipient: body.recipient,
+      splitPercentage,
+      amount: Math.round(body.amount * 100) / 100,
+      currency: body.currency,
+      method: body.method,
+      network: body.network || "",
+      phone: body.phone || "",
+      bankName: body.bankName || "",
+      accountNumber: body.accountNumber || "",
+      accountName: body.accountName,
+      branch: body.branch || "",
+      notes: body.notes || "",
+      status: "pending",
+      requestedBy,
+    });
+
+    res.status(201).json({
+      payout: {
+        id: payout._id.toString(),
+        recipient: payout.recipient,
+        splitPercentage: payout.splitPercentage,
+        amount: payout.amount,
+        currency: payout.currency,
+        method: payout.method,
+        network: payout.network,
+        phone: payout.phone,
+        bankName: payout.bankName,
+        accountNumber: payout.accountNumber,
+        accountName: payout.accountName,
+        branch: payout.branch,
+        notes: payout.notes,
+        status: payout.status,
+        requestedBy: payout.requestedBy,
+        createdAt: payout.createdAt,
+      },
+      message: `Payout request of ${payout.currency} ${payout.amount.toFixed(2)} for ${payout.recipient} (${splitPercentage}%) submitted successfully.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.patch("/payouts/:id/mark-paid", async (req: AuthedRequest, res, next) => {
+  try {
+    const payout = await Payout.findById(req.params.id);
+    if (!payout) throw new HttpError(404, "Payout request not found");
+    if (payout.status === "paid") {
+      return res.json({
+        payout,
+        message: "Payout is already marked as paid.",
+      });
+    }
+
+    payout.status = "paid";
+    payout.paidAt = new Date();
+    payout.paidBy = req.user?.name || req.user?.email || "Admin";
+    if (req.body.paidReference) {
+      payout.paidReference = String(req.body.paidReference).trim();
+    }
+    await payout.save();
+
+    res.json({
+      payout: {
+        id: payout._id.toString(),
+        recipient: payout.recipient,
+        splitPercentage: payout.splitPercentage,
+        amount: payout.amount,
+        currency: payout.currency,
+        method: payout.method,
+        network: payout.network,
+        phone: payout.phone,
+        bankName: payout.bankName,
+        accountNumber: payout.accountNumber,
+        accountName: payout.accountName,
+        status: payout.status,
+        paidAt: payout.paidAt,
+        paidBy: payout.paidBy,
+        paidReference: payout.paidReference,
+      },
+      message: `Payout of ${payout.currency} ${payout.amount.toFixed(2)} to ${payout.recipient} (${payout.splitPercentage}%) marked as paid successfully!`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.patch("/payouts/:id/reject", async (_req, res, next) => {
+  try {
+    const payout = await Payout.findById(_req.params.id);
+    if (!payout) throw new HttpError(404, "Payout request not found");
+
+    payout.status = "rejected";
+    if (_req.body.reason) {
+      payout.notes = (payout.notes ? payout.notes + " | " : "") + "Rejected: " + String(_req.body.reason).trim();
+    }
+    await payout.save();
+
+    res.json({
+      payout,
+      message: "Payout marked as rejected.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.delete("/payouts/:id", async (req, res, next) => {
+  try {
+    const payout = await Payout.findById(req.params.id);
+    if (!payout) throw new HttpError(404, "Payout request not found");
+
+    await Payout.findByIdAndDelete(payout._id);
+    res.json({
+      message: "Payout request deleted successfully.",
+      deletedId: req.params.id,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 

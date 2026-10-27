@@ -135,6 +135,11 @@ export async function sendMoolreSms(
   if (!phoneNumber) return false;
 
   const recipient = formatPhoneForMoolre(phoneNumber);
+  if (recipient.startsWith("234")) {
+    // SMS provider does not support Nigerian numbers (+234).
+    // Users unlock their odds directly on site using their phone number.
+    return false;
+  }
   const payload = {
     type: 1,
     senderid: config.moolre.senderId,

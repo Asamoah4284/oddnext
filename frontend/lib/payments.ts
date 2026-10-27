@@ -19,6 +19,11 @@ export type PaymentVerify = {
   status: string;
   reference?: string;
   product?: string;
+  amount?: number;
+  currency?: string;
+  provider?: string;
+  proofSubmitted?: boolean;
+  proofSubmittedAt?: string | null;
   smsSent?: boolean;
   slipViewed?: boolean;
   createdAt?: string;
@@ -34,6 +39,30 @@ export type PaymentMessage = {
   type: typeof PAYMENT_EVENT;
   reference: string;
 };
+
+export function submitPaymentProof(
+  reference: string,
+  proofImage: string,
+  senderName?: string,
+  phone?: string,
+  token?: string | null
+) {
+  return apiFetch<{
+    success: boolean;
+    reference: string;
+    status: string;
+    message: string;
+  }>("/api/payments/proof", {
+    method: "POST",
+    token,
+    body: JSON.stringify({
+      reference,
+      proofImage,
+      senderName,
+      phone,
+    }),
+  });
+}
 
 export function storePayRef(ref: string) {
   sessionStorage.setItem(PAY_REF_KEY, ref);

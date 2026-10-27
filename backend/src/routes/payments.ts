@@ -138,6 +138,9 @@ async function paymentSnapshot(
     unlockCount?: number | null;
     maxUnlocks?: number | null;
     vipExpiresAt?: Date | null;
+    proofImage?: string | null;
+    proofNote?: string | null;
+    proofSubmittedAt?: Date | null;
   },
   options?: { quick?: boolean }
 ) {
@@ -160,6 +163,20 @@ async function paymentSnapshot(
   }
 
   const provider = payment.provider || "moolre";
+
+  if (provider === "opay" || provider === "manual" || payment.status === "proof_submitted") {
+    return {
+      status: payment.status,
+      reference: payment.externalRef,
+      product: payment.product,
+      amount: payment.amount,
+      currency: payment.currency || "NGN",
+      provider,
+      proofSubmitted: Boolean(payment.proofImage),
+      proofSubmittedAt: payment.proofSubmittedAt,
+      createdAt: payment.createdAt,
+    };
+  }
 
   if (provider === "paystack") {
     if (!hasPaystackCredentials()) {
@@ -307,9 +324,41 @@ paymentsRouter.post(
         }
       }
 
+      if (country === "NG") {
+        const amount = amountForProduct(product, country, config.ghsToNgn);
+        const externalRef = `ng_${randomUUID().replace(/-/g, "")}`;
+        const provider = "opay";
+
+        await Payment.create({
+          userId,
+          product: product.id,
+          externalRef,
+          amount,
+          currency: "NGN",
+          provider,
+          status: "pending",
+          phone,
+        });
+
+        res.json({
+          provider: "opay",
+          reference: externalRef,
+          amount,
+          currency: "NGN",
+          product: product.id,
+          instructions: {
+            bankName: "Opay",
+            accountNumber: "7082511762",
+            accountName: "Peculiar Nmerisinachi Calistus",
+          },
+          ...session,
+        });
+        return;
+      }
+
       const amount = amountForProduct(product, country, config.ghsToNgn);
       const currency = currencyForCountry(country);
-      const provider = country === "NG" ? "paystack" : "moolre";
+      const provider = "moolre";
       const externalRef = `se_${randomUUID().replace(/-/g, "")}`;
 
       await Payment.create({
@@ -324,56 +373,7 @@ paymentsRouter.post(
       });
 
       const returnOrigin = resolveReturnOrigin(req, body.returnOrigin);
-      const redirect =
-        provider === "paystack"
-          ? `${returnOrigin}/payment/return?reference=${externalRef}`
-          : `${returnOrigin}/payment/return?reference=${externalRef}&embed=1`;
-
-      if (provider === "paystack") {
-        if (!hasPaystackCredentials()) {
-          if (!config.isDev) {
-            throw new HttpError(503, "Nigerian payments are not configured yet");
-          }
-          res.json({
-            authorization_url: `${redirect}&simulate=1`,
-            reference: externalRef,
-            simulated: true,
-            amount,
-            currency,
-            provider,
-            product: product.id,
-            ...session,
-          });
-          return;
-        }
-
-        const authorizationUrl = await createPaystackLink({
-          amount,
-          email: email!,
-          externalRef,
-          callback: redirect,
-          phone,
-          metadata: {
-            product: product.id,
-            userId,
-            phone,
-            country,
-            source: "oddnext",
-          },
-        });
-
-        res.json({
-          authorization_url: authorizationUrl,
-          reference: externalRef,
-          simulated: false,
-          amount,
-          currency,
-          provider,
-          product: product.id,
-          ...session,
-        });
-        return;
-      }
+      const redirect = `${returnOrigin}/payment/return?reference=${externalRef}&embed=1`;
 
       const publicBackend =
         process.env.PUBLIC_BACKEND_URL ||
@@ -584,6 +584,53 @@ paymentsRouter.post("/paystack/webhook", async (req, res, next) => {
     next(err);
   }
 });
+
+const proofSchema = z.object({
+  reference: z.string().min(4),
+  proofImage: z.string().min(10, "Please upload a photo of your payment receipt"),
+  senderName: z.string().trim().optional(),
+  phone: z.string().trim().optional(),
+});
+
+paymentsRouter.post(
+  "/proof",
+  optionalAuth,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const body = proofSchema.parse(req.body ?? {});
+      const payment = await Payment.findOne({ externalRef: body.reference });
+      if (!payment) {
+        throw new HttpError(404, "Payment record not found");
+      }
+      if (
+        req.user &&
+        payment.userId.toString() !== req.user.id &&
+        req.user.role !== "admin"
+      ) {
+        throw new HttpError(403, "Not authorized to update this payment");
+      }
+      payment.proofImage = body.proofImage;
+      if (body.senderName) {
+        payment.proofNote = body.senderName;
+      }
+      if (body.phone) {
+        payment.phone = body.phone;
+      }
+      payment.status = "proof_submitted";
+      payment.proofSubmittedAt = new Date();
+      await payment.save();
+
+      res.json({
+        success: true,
+        reference: payment.externalRef,
+        status: payment.status,
+        message: "Payment proof received. Awaiting admin approval.",
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 paymentsRouter.post(
   "/ack/:ref",

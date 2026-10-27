@@ -5,6 +5,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { MoolreCheckout } from "@/components/MoolreCheckout";
+import { NigeriaPaymentModal } from "@/components/NigeriaPaymentModal";
 import { PaidSlip } from "@/components/PaidSlip";
 import { PhoneField } from "@/components/PhoneField";
 import { useMoolrePay } from "@/hooks/useMoolrePay";
@@ -23,11 +24,13 @@ export default function ProfilePage() {
     country,
     setCountry,
     checkout,
+    opayCheckout,
     paid,
     startPay,
     handlePaid,
     dismissPaid,
     closeCheckout,
+    closeOpayCheckout,
   } = useMoolrePay();
 
   const allAccess = user?.role === "admin" || Boolean(user?.vipActive);
@@ -47,7 +50,7 @@ export default function ProfilePage() {
           <p className="mt-3 text-sm leading-6 text-mute sm:text-base">
             {allAccess
               ? "Every odds board is open."
-              : "Ghana pays with Mobile Money. Nigeria pays with Paystack. After payment confirms, the slip opens here and is sent by SMS."}
+              : "Ghana pays with Mobile Money. Nigeria pays via Opay direct transfer (7082511762). After payment confirms, the slip opens here and is sent by SMS."}
           </p>
         </div>
 
@@ -147,6 +150,13 @@ export default function ProfilePage() {
         <MoolreCheckout
           session={checkout}
           onClose={closeCheckout}
+          onPaid={handlePaid}
+        />
+      )}
+      {opayCheckout && (
+        <NigeriaPaymentModal
+          session={opayCheckout}
+          onClose={closeOpayCheckout}
           onPaid={handlePaid}
         />
       )}

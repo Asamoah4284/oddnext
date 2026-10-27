@@ -32,10 +32,21 @@ export type LookupCodeItem = {
   maxDailyUnlocks?: number | null;
 };
 
+export type LookupPendingItem = {
+  reference: string;
+  product: string;
+  amount: number;
+  currency: string;
+  status: string;
+  proofSubmitted: boolean;
+  createdAt: string;
+};
+
 export type LookupResponse = {
   ok: boolean;
   count: number;
   codes: LookupCodeItem[];
+  pending?: LookupPendingItem[];
 };
 
 export function revealCode(code: string): Promise<RevealResponse> {

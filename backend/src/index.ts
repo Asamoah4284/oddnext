@@ -30,12 +30,13 @@ app.use(
 );
 app.use(
   express.json({
-    limit: "1mb",
+    limit: "15mb",
     verify: (req, _res, buf) => {
       (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
     },
   })
 );
+app.use(express.urlencoded({ limit: "15mb", extended: true }));
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

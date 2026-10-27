@@ -674,22 +674,23 @@ export default function AdminPage() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
-        {/* Top Header Bar (Matching Screenshot) */}
-        <header className="sticky top-0 z-20 h-16 bg-white border-b border-slate-200/80 px-4 sm:px-8 flex items-center justify-between backdrop-blur-md">
+        {/* Top Header Bar (Responsive on Mobile) */}
+        <header className="sticky top-0 z-20 h-16 bg-white border-b border-slate-200/80 px-3 sm:px-8 flex items-center justify-between backdrop-blur-md">
           {/* Mobile Menu Button & Brand */}
-          <div className="flex items-center gap-3 lg:hidden">
+          <div className="flex items-center gap-2.5 sm:gap-3 lg:hidden">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+              className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 shrink-0"
+              aria-label="Toggle navigation menu"
             >
               <IconDashboard className="h-5 w-5" />
             </button>
-            <div className="flex items-center gap-2">
-              <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-600 text-white font-bold text-xs">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-600 text-white font-bold text-xs shrink-0">
                 ON
               </div>
-              <span className="font-bold text-slate-900 text-sm">OddNext</span>
+              <span className="font-bold text-slate-900 text-sm hidden sm:inline">OddNext</span>
             </div>
           </div>
 
@@ -699,42 +700,53 @@ export default function AdminPage() {
           </div>
 
           {/* Right Header Capsule Items */}
-          <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-1.5 sm:gap-4">
+            {/* Primary Action Button: + Paste Betslip */}
+            <button
+              type="button"
+              onClick={() => setPasteModalOpen(true)}
+              className="inline-flex items-center gap-1 sm:gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-2.5 sm:px-3.5 py-1.5 text-xs font-bold shadow-sm transition shrink-0"
+            >
+              <IconClipboard className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">+ Paste Betslip</span>
+              <span className="sm:hidden">+ Paste</span>
+            </button>
+
             {/* Bell Notifications */}
             <button
               type="button"
-              className="h-9 w-9 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition relative"
+              className="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition relative shrink-0"
               title="Notifications"
             >
-              <IconBell className="h-4 w-4" />
-              <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-blue-600" />
+              <IconBell className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 h-2 w-2 rounded-full bg-blue-600" />
             </button>
 
             {/* User Profile Capsule (Matching Screenshot: Asamoah / Superadmin) */}
-            <div className="flex items-center gap-2.5 pl-1 pr-2 py-1 rounded-full border border-slate-200 bg-slate-50">
+            <div className="flex items-center gap-2 pl-1 pr-1 sm:pr-2 py-1 rounded-full border border-slate-200 bg-slate-50 shrink-0">
               <div className="grid h-7 w-7 place-items-center rounded-full bg-blue-600 text-white font-bold text-xs">
                 A
               </div>
-              <div className="hidden sm:block text-left pr-2">
+              <div className="hidden md:block text-left pr-2">
                 <p className="text-xs font-bold text-slate-900 leading-none">Asamoah</p>
                 <p className="text-[10px] text-slate-400 font-medium leading-none mt-0.5">Superadmin</p>
               </div>
             </div>
 
-            {/* Dark / Light Toggle Icon */}
+            {/* Dark / Light Toggle Icon (Desktop only, available in drawer for mobile) */}
             <button
               type="button"
-              className="text-slate-400 hover:text-slate-600 p-1"
+              className="hidden sm:block text-slate-400 hover:text-slate-600 p-1"
               title="Theme Toggle"
             >
               <IconMoon className="h-4 w-4" />
             </button>
 
-            {/* Logout Icon */}
+            {/* Logout Icon (Desktop only, available in drawer for mobile) */}
             <button
               type="button"
               onClick={dropStaleSession}
-              className="text-slate-400 hover:text-rose-600 p-1"
+              className="hidden sm:block text-slate-400 hover:text-rose-600 p-1"
               title="Sign out"
             >
               <IconLogOut className="h-4 w-4" />
@@ -743,30 +755,7 @@ export default function AdminPage() {
         </header>
 
         {/* Page Content Body */}
-        <main className="p-4 sm:p-7 space-y-6 max-w-7xl w-full mx-auto">
-          {/* Header Title Section */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                OddNext Command Center
-              </h1>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500">
-                Unified operations across Daily Slips, High-Odds Accumulators, Board Pricing, and SportyBet Booking Codes.
-              </p>
-            </div>
-
-            {/* Royal Blue Top-Right Primary Action Button (Matching Screenshot: + Phone / Custom Order) */}
-            <div className="flex items-center gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setPasteModalOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 text-xs font-bold shadow-sm transition"
-              >
-                <IconClipboard className="h-3.5 w-3.5" />
-                <span>+ Paste Betslip</span>
-              </button>
-            </div>
-          </div>
+        <main className="p-3 sm:p-7 space-y-4 sm:space-y-6 max-w-7xl w-full mx-auto">
 
           {/* Feedback & Error Banners */}
           {error && (
@@ -807,311 +796,107 @@ export default function AdminPage() {
               <AdminPricesEditor token={token} />
             </div>
           ) : adminTab === "payments" ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-              <AdminPaymentsAnalytics token={token} />
-            </div>
+            <AdminPaymentsAnalytics token={token} />
           ) : (
             <>
-              {/* Dark Executive Live Banner (Matching Screenshot exactly!) */}
-              <div className="bg-[#0b1328] text-white rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm border border-slate-800">
-                {/* Left: Green online indicator */}
-                <div className="flex items-center gap-3.5">
-                  <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#14233c] text-emerald-400 border border-emerald-500/30">
-                    <IconActivity className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xl sm:text-2xl font-bold text-white">
-                        {stats.totalCount > 0 ? "1" : "0"}
-                      </span>
-                      <span className="rounded-full bg-emerald-500/20 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        ONLINE NOW
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Active in last 1 min across OddNext web & checkouts
-                    </p>
-                  </div>
-                </div>
-
-                {/* Center: Metric Columns (Matching Screenshot: Today's visits, Weekly, Monthly) */}
-                <div className="flex items-center gap-6 sm:gap-10 border-t sm:border-t-0 sm:border-l border-slate-800 pt-3 sm:pt-0 sm:pl-8">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      TODAY'S PICKS
-                    </p>
-                    <div className="mt-1 flex items-baseline gap-1.5">
-                      <span className="font-mono text-lg sm:text-xl font-bold text-white">
-                        {stats.totalCount}
-                      </span>
-                      <span className="text-[10px] text-emerald-400 font-semibold">
-                        ({slipGroups.length} slips)
-                      </span>
+              {/* Compact Sleek Metric Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+                {/* Card 1: TOTAL PICKS */}
+                <div className="rounded-xl border border-slate-200/80 bg-white p-3 sm:px-4 sm:py-3 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      TOTAL PICKS
+                    </span>
+                    <div className="grid h-6 w-6 place-items-center rounded-lg bg-blue-50 text-blue-600">
+                      <IconUsers className="h-3.5 w-3.5" />
                     </div>
                   </div>
-
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      SETTLED (7D)
-                    </p>
-                    <div className="mt-1 flex items-baseline gap-1.5">
-                      <span className="font-mono text-lg sm:text-xl font-bold text-white">
-                        {stats.wonCount + stats.lostCount}
-                      </span>
-                      <span className="text-[10px] text-slate-400">results</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      WIN RATE (30D)
-                    </p>
-                    <div className="mt-1 flex items-baseline gap-1.5">
-                      <span className="font-mono text-lg sm:text-xl font-bold text-emerald-400">
-                        {stats.winRate}%
-                      </span>
-                      <span className="text-[10px] text-slate-400">accuracy</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right: Notification chip & Full Action */}
-                <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
-                  {stats.pendingCount > 0 && (
-                    <div className="rounded-xl bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 text-xs font-semibold text-rose-400 flex items-center gap-1.5">
-                      <span>🔥</span>
-                      <span>{stats.pendingCount} Pending Items</span>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setAdminTab("payments")}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 px-3.5 py-1.5 text-xs font-bold text-white transition shadow-sm"
-                  >
-                    <span>Full Analytics</span>
-                    <IconChevronRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* 4 White Metric Cards with Mini Wave Curves (Matching Screenshot exactly!) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Card 1: TOTAL USERS / PICKS */}
-                <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        TOTAL PICKS
-                      </span>
-                      <div className="grid h-7 w-7 place-items-center rounded-lg bg-blue-50 text-blue-600">
-                        <IconUsers className="h-3.5 w-3.5" />
-                      </div>
-                    </div>
-                    <div className="mt-1.5">
-                      <span className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900">
-                        {stats.totalCount}
-                      </span>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        {stats.totalCount} active picks
-                      </p>
-                    </div>
-                  </div>
-                  {/* Blue Wave SVG Line */}
-                  <div className="mt-3 pt-1">
-                    <svg viewBox="0 0 120 28" fill="none" className="h-6 w-full text-blue-500">
-                      <path
-                        d="M0 20 Q 30 5, 60 16 T 120 10"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        fill="none"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Card 2: TOTAL PRODUCTS / BOARDS */}
-                <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        ACTIVE BOARDS
-                      </span>
-                      <div className="grid h-7 w-7 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
-                        <IconBall className="h-3.5 w-3.5" />
-                      </div>
-                    </div>
-                    <div className="mt-1.5">
-                      <span className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900">
-                        {slipGroups.length}
-                      </span>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        {slipProducts.length} boards live
-                      </p>
-                    </div>
-                  </div>
-                  {/* Green Wave SVG Line */}
-                  <div className="mt-3 pt-1">
-                    <svg viewBox="0 0 120 28" fill="none" className="h-6 w-full text-emerald-500">
-                      <path
-                        d="M0 22 Q 35 18, 65 6 T 120 14"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        fill="none"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Card 3: TOTAL ORDERS / OUTCOMES */}
-                <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        SETTLED OUTCOMES
-                      </span>
-                      <div className="grid h-7 w-7 place-items-center rounded-lg bg-amber-50 text-amber-600">
-                        <IconClock className="h-3.5 w-3.5" />
-                      </div>
-                    </div>
-                    <div className="mt-1.5">
-                      <span className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900">
-                        {stats.wonCount}W
-                      </span>
-                      <p className="text-[11px] text-amber-600 font-semibold mt-0.5">
-                        {stats.pendingCount} pending
-                      </p>
-                    </div>
-                  </div>
-                  {/* Amber Wave SVG Line */}
-                  <div className="mt-3 pt-1">
-                    <svg viewBox="0 0 120 28" fill="none" className="h-6 w-full text-amber-500">
-                      <path
-                        d="M0 16 Q 30 24, 70 8 T 120 20"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        fill="none"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Card 4: REVENUE */}
-                <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        WIN RATE
-                      </span>
-                      <div className="grid h-7 w-7 place-items-center rounded-lg bg-purple-50 text-purple-600">
-                        <IconWallet className="h-3.5 w-3.5" />
-                      </div>
-                    </div>
-                    <div className="mt-1.5">
-                      <span className="font-mono text-2xl sm:text-3xl font-extrabold text-slate-900">
-                        {stats.winRate}%
-                      </span>
-                      <p className="text-[11px] text-purple-600 font-semibold mt-0.5">
-                        {stats.wonCount} won · {stats.lostCount} lost
-                      </p>
-                    </div>
-                  </div>
-                  {/* Purple Wave SVG Line */}
-                  <div className="mt-3 pt-1">
-                    <svg viewBox="0 0 120 28" fill="none" className="h-6 w-full text-purple-500">
-                      <path
-                        d="M0 18 Q 40 4, 80 18 T 120 8"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        fill="none"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-
-              {/* Main Ecosystem Card (Matching bottom card in screenshot) */}
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-5 sm:p-6 shadow-sm space-y-5">
-                {/* Header with Blue Round Icon & Stars */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600 text-white font-bold text-sm shadow-sm">
-                      <IconLayers className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-base font-bold text-slate-900">
-                          OddNext Betting Operations & Daily Slips
-                        </h2>
-                        <span className="rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-600">
-                          Live Pulse
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Aggregated sports betting demand velocity across banker slips, high accas, and VIP codes.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-bold text-emerald-700 flex items-center gap-1.5">
-                      <span>★</span>
-                      <span>60% Forson · 40% Asamoah Split Active</span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-mono text-xl sm:text-2xl font-bold text-slate-900">
+                      {stats.totalCount}
                     </span>
                   </div>
                 </div>
 
-                {/* Sub KPI Stats Strip */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 rounded-xl p-3 border border-slate-200/60">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      UNIFIED PICKS POOL
-                    </p>
-                    <p className="font-mono text-base font-bold text-slate-900 mt-0.5">
-                      {stats.totalCount} Games
-                    </p>
-                    <p className="text-[10px] text-slate-400">across 5 board tiers</p>
+                {/* Card 2: ACTIVE BOARDS */}
+                <div className="rounded-xl border border-slate-200/80 bg-white p-3 sm:px-4 sm:py-3 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      ACTIVE BOARDS
+                    </span>
+                    <div className="grid h-6 w-6 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+                      <IconBall className="h-3.5 w-3.5" />
+                    </div>
                   </div>
-
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      ACTIVE SLIP TICKETS
-                    </p>
-                    <p className="font-mono text-base font-bold text-slate-900 mt-0.5">
-                      {slipGroups.length} Accumulators
-                    </p>
-                    <p className="text-[10px] text-slate-400">auto-calculated odds</p>
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      SPORTYBET SYNC
-                    </p>
-                    <p className="font-mono text-base font-bold text-slate-900 mt-0.5">
-                      {stats.boardsWithCodes} / {stats.totalBoards} Synced
-                    </p>
-                    <p className="text-[10px] text-emerald-600 font-semibold">1-click code copy</p>
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      BOARD CHECKOUT
-                    </p>
-                    <p className="font-mono text-base font-bold text-slate-900 mt-0.5">
-                      GH₵ & ₦ Live
-                    </p>
-                    <p className="text-[10px] text-slate-400">Moolre + Paystack</p>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-mono text-xl sm:text-2xl font-bold text-slate-900">
+                      {slipGroups.length}
+                    </span>
                   </div>
                 </div>
 
+                {/* Card 3: SETTLED OUTCOMES */}
+                <div className="rounded-xl border border-slate-200/80 bg-white p-3 sm:px-4 sm:py-3 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      SETTLED
+                    </span>
+                    <div className="grid h-6 w-6 place-items-center rounded-lg bg-amber-50 text-amber-600">
+                      <IconClock className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-mono text-xl sm:text-2xl font-bold text-slate-900">
+                      {stats.wonCount}W
+                    </span>
+                    <span className="text-[10px] text-amber-600 font-medium">
+                      {stats.pendingCount} pending
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card 4: WIN RATE */}
+                <div className="rounded-xl border border-slate-200/80 bg-white p-3 sm:px-4 sm:py-3 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      WIN RATE
+                    </span>
+                    <div className="grid h-6 w-6 place-items-center rounded-lg bg-purple-50 text-purple-600">
+                      <IconWallet className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-mono text-xl sm:text-2xl font-bold text-slate-900">
+                      {stats.winRate}%
+                    </span>
+                    <span className="text-[10px] text-purple-600 font-medium">
+                      {stats.wonCount}W · {stats.lostCount}L
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Ecosystem Card (Clean & Concise) */}
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-3.5 sm:p-5 shadow-sm space-y-3.5 sm:space-y-4">
+                {/* Clean Header */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-white font-bold text-sm shadow-sm shrink-0">
+                      <IconLayers className="h-4 w-4" />
+                    </div>
+                    <h2 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">
+                      Daily Slips
+                    </h2>
+                  </div>
+
+                  <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700">
+                    60/40 Split Active
+                  </span>
+                </div>
+
                 {/* Studio Creator Toggle Strip */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pt-1">
+                  <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1123,32 +908,32 @@ export default function AdminPage() {
                           setFormOpen(true);
                         }
                       }}
-                      className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition shadow-sm ${
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 sm:px-4 py-2 text-xs font-bold transition shadow-sm ${
                         formOpen
                           ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
                           : "bg-blue-600 hover:bg-blue-700 text-white"
                       }`}
                     >
-                      <IconPlus className="h-4 w-4" />
-                      <span>{formOpen ? "Close Pick Studio" : "+ Add Single Game"}</span>
+                      <IconPlus className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{formOpen ? "Close Studio" : "Add Game"}</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setPasteModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-3.5 py-2 text-xs font-semibold shadow-sm transition"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-3 sm:px-3.5 py-2 text-xs font-semibold shadow-sm transition"
                     >
-                      <IconClipboard className="h-4 w-4 text-blue-600" />
-                      <span>Paste Full Betslip</span>
+                      <IconClipboard className="h-4 w-4 text-blue-600 shrink-0" />
+                      <span className="truncate">Paste Betslip</span>
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between sm:justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => void loadTips()}
                       disabled={loadingTips}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm"
+                      className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm"
                     >
                       <IconRefresh className={`h-3.5 w-3.5 ${loadingTips ? "animate-spin" : ""}`} />
                       <span>Refresh</span>
@@ -1159,10 +944,10 @@ export default function AdminPage() {
                         type="button"
                         onClick={clearAllTips}
                         disabled={busy}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-3 py-2 text-xs font-semibold text-rose-600 transition"
+                        className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-3 py-2 text-xs font-semibold text-rose-600 transition"
                       >
-                        <IconTrash className="h-3.5 w-3.5" />
-                        <span>{boardFilter === "all" ? "Clear All" : `Clear ${productLabel(boardFilter)}`}</span>
+                        <IconTrash className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{boardFilter === "all" ? "Clear All" : `Clear ${productLabel(boardFilter)}`}</span>
                       </button>
                     )}
                   </div>
@@ -1417,13 +1202,13 @@ export default function AdminPage() {
 
                 {/* Search & Board Filter Bar */}
                 <div className="space-y-3 pt-2">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
                     {/* Search */}
-                    <div className="relative flex-1 max-w-md">
+                    <div className="relative flex-1">
                       <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                       <input
                         type="text"
-                        placeholder="Search match, team, league, prediction…"
+                        placeholder="Search picks…"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-8 py-2 text-xs text-slate-900 placeholder-slate-400 outline-none focus:bg-white focus:border-blue-600"
@@ -1440,13 +1225,13 @@ export default function AdminPage() {
                     </div>
 
                     {/* Status Pill Filters */}
-                    <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1 text-xs">
+                    <div className="flex items-center justify-between sm:justify-start rounded-xl border border-slate-200 bg-slate-50 p-1 text-xs">
                       {(["all", "pending", "won", "lost"] as const).map((st) => (
                         <button
                           key={st}
                           type="button"
                           onClick={() => setStatusFilter(st)}
-                          className={`rounded-lg px-3 py-1 font-semibold capitalize transition ${
+                          className={`flex-1 sm:flex-initial text-center rounded-lg px-2.5 sm:px-3 py-1 font-semibold capitalize transition ${
                             statusFilter === st
                               ? "bg-white text-blue-600 shadow-2xs font-bold"
                               : "text-slate-500 hover:text-slate-900"
@@ -1459,7 +1244,7 @@ export default function AdminPage() {
                   </div>
 
                   {/* Board Tabs */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 -mx-3.5 px-3.5 sm:mx-0 sm:px-0">
                     <button
                       type="button"
                       onClick={() => setBoardFilter("all")}
@@ -1519,8 +1304,8 @@ export default function AdminPage() {
                         className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xs hover:border-slate-300 transition"
                       >
                         {/* Ticket Header */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border-b border-slate-200/80 px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2.5">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 bg-slate-50 border-b border-slate-200/80 p-3 sm:px-4 sm:py-3">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 border border-blue-200/60 font-mono">
                               {productLabel(group.product)}
                             </span>
@@ -1534,8 +1319,8 @@ export default function AdminPage() {
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1.5 rounded-xl bg-white border border-slate-200 px-3 py-1 text-xs font-mono font-bold text-blue-600 shadow-2xs">
+                          <div className="flex items-center justify-between sm:justify-end gap-2">
+                            <div className="flex items-center gap-1.5 rounded-xl bg-white border border-slate-200 px-2.5 sm:px-3 py-1 text-xs font-mono font-bold text-blue-600 shadow-2xs">
                               <span className="text-[10px] text-slate-400 font-sans uppercase">Acca Odds</span>
                               <span>{group.combinedOdds.toFixed(2)}x</span>
                             </div>
@@ -1565,7 +1350,7 @@ export default function AdminPage() {
                           {group.tips.map((tip) => (
                             <div
                               key={tip.id}
-                              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 hover:bg-slate-50/60 transition"
+                              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 p-3 sm:px-4 sm:py-3 hover:bg-slate-50/60 transition"
                             >
                               <div className="min-w-0 space-y-1">
                                 <div className="flex flex-wrap items-center gap-2">
@@ -1595,12 +1380,12 @@ export default function AdminPage() {
                               </div>
 
                               {/* Action Row */}
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+                              <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                                <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                                   <button
                                     type="button"
                                     onClick={() => void patchTip(tip.id, { status: "pending" })}
-                                    className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
                                       tip.status === "pending"
                                         ? "bg-amber-500 text-white font-bold shadow-2xs"
                                         : "text-slate-500 hover:text-slate-900"
@@ -1611,7 +1396,7 @@ export default function AdminPage() {
                                   <button
                                     type="button"
                                     onClick={() => void patchTip(tip.id, { status: "won" })}
-                                    className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
                                       tip.status === "won"
                                         ? "bg-emerald-600 text-white font-bold shadow-2xs"
                                         : "text-slate-500 hover:text-emerald-700"
@@ -1622,7 +1407,7 @@ export default function AdminPage() {
                                   <button
                                     type="button"
                                     onClick={() => void patchTip(tip.id, { status: "lost" })}
-                                    className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
                                       tip.status === "lost"
                                         ? "bg-rose-600 text-white font-bold shadow-2xs"
                                         : "text-slate-500 hover:text-rose-700"
@@ -1632,36 +1417,38 @@ export default function AdminPage() {
                                   </button>
                                 </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() => startEditTip(tip)}
-                                  className="rounded-xl border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-600 hover:border-blue-200 transition shadow-2xs"
-                                  title="Edit Pick"
-                                >
-                                  <IconEdit className="h-3.5 w-3.5" />
-                                </button>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditTip(tip)}
+                                    className="rounded-xl border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-600 hover:border-blue-200 transition shadow-2xs"
+                                    title="Edit Pick"
+                                  >
+                                    <IconEdit className="h-3.5 w-3.5" />
+                                  </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() => deleteTip(tip.id, `${tip.homeTeam} vs ${tip.awayTeam}`)}
-                                  className="rounded-xl border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-600 hover:border-rose-200 transition shadow-2xs"
-                                  title="Delete Pick"
-                                >
-                                  <IconTrash className="h-3.5 w-3.5" />
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteTip(tip.id, `${tip.homeTeam} vs ${tip.awayTeam}`)}
+                                    className="rounded-xl border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-600 hover:border-rose-200 transition shadow-2xs"
+                                    title="Delete Pick"
+                                  >
+                                    <IconTrash className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           ))}
                         </div>
 
                         {/* Booking Code Bar */}
-                        <div className="bg-slate-50/80 border-t border-slate-200/80 px-4 py-3">
+                        <div className="bg-slate-50/80 border-t border-slate-200/80 p-3 sm:px-4 sm:py-3">
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
                             <div className="flex items-center gap-2">
-                              <span className="grid h-6 w-6 place-items-center rounded-lg bg-blue-600 text-white font-bold text-[10px]">
+                              <span className="grid h-6 w-6 place-items-center rounded-lg bg-blue-600 text-white font-bold text-[10px] shrink-0">
                                 SB
                               </span>
-                              <span className="text-xs font-semibold text-slate-700">
+                              <span className="text-xs font-semibold text-slate-700 shrink-0">
                                 SportyBet Code:
                               </span>
                               {group.code && (
@@ -1674,7 +1461,7 @@ export default function AdminPage() {
                             <div className="flex items-center gap-2">
                               <input
                                 type="text"
-                                placeholder="Enter SportyBet booking code…"
+                                placeholder="SportyBet code…"
                                 value={draft}
                                 onChange={(e) =>
                                   setBookingDrafts((curr) => ({
@@ -1682,14 +1469,14 @@ export default function AdminPage() {
                                     [group.key]: e.target.value,
                                   }))
                                 }
-                                className="w-full sm:w-56 rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 placeholder-slate-400 outline-none focus:border-blue-600 shadow-2xs"
+                                className="flex-1 sm:w-56 rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-900 placeholder-slate-400 outline-none focus:border-blue-600 shadow-2xs min-w-0"
                               />
 
                               {draft && (
                                 <button
                                   type="button"
                                   onClick={() => handleCopyBookingCode(group.key, draft)}
-                                  className={`shrink-0 inline-flex items-center gap-1 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                                  className={`shrink-0 inline-flex items-center gap-1 rounded-xl border px-2.5 sm:px-3 py-1.5 text-xs font-semibold transition ${
                                     isCopied
                                       ? "border-emerald-300 bg-emerald-50 text-emerald-700 font-bold"
                                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -1704,7 +1491,7 @@ export default function AdminPage() {
                                 type="button"
                                 disabled={bookingBusy === group.key}
                                 onClick={() => void saveBoardBooking(group.product, group.date)}
-                                className="shrink-0 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 text-xs font-bold transition shadow-sm disabled:opacity-50"
+                                className="shrink-0 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-3.5 py-1.5 text-xs font-bold transition shadow-sm disabled:opacity-50"
                               >
                                 {bookingBusy === group.key ? "Saving…" : "Save Code"}
                               </button>

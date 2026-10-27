@@ -118,6 +118,7 @@ export type PaymentAnalyticsData = {
   statusCounts: {
     paid: number;
     pending: number;
+    proofSubmitted?: number;
     failed: number;
     total: number;
     successRate: number;
@@ -133,8 +134,12 @@ export type AdminPaymentItem = {
   amount: number;
   currency: string;
   provider: string;
-  status: "paid" | "pending" | "failed";
+  status: "paid" | "pending" | "failed" | "proof_submitted";
   phone: string;
+  proofImage?: string;
+  proofNote?: string;
+  proofSubmittedAt?: string | null;
+  revealCode?: string;
   smsSent: boolean;
   slipViewed: boolean;
   createdAt: string;
@@ -148,3 +153,46 @@ export type AdminPaymentItem = {
     phone: string;
   };
 };
+
+export type AdminPayoutItem = {
+  id: string;
+  recipient: "Forson" | "Asamoah";
+  splitPercentage: number;
+  amount: number;
+  currency: "GHS" | "NGN";
+  method: "mobile_money" | "bank";
+  network?: string;
+  phone?: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountName: string;
+  branch?: string;
+  notes?: string;
+  status: "pending" | "paid" | "rejected";
+  requestedBy?: string;
+  paidAt?: string | null;
+  paidBy?: string;
+  paidReference?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PayoutAdminSummary = {
+  earnedGhs: number;
+  earnedNgn: number;
+  paidGhs: number;
+  paidNgn: number;
+  pendingGhs: number;
+  pendingNgn: number;
+  availableGhs: number;
+  availableNgn: number;
+};
+
+export type PayoutsResponse = {
+  payouts: AdminPayoutItem[];
+  summary: {
+    forson: PayoutAdminSummary;
+    asamoah: PayoutAdminSummary;
+  };
+};
+
