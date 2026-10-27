@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { Router, type Request } from "express";
+import mongoose from "mongoose";
 import { z } from "zod";
 import { config, hasMoolreCredentials, hasPaystackCredentials } from "../config.js";
 import {
   optionalAuth,
+  requireAdmin,
   requireAuth,
   toAuthUser,
   type AuthedRequest,
@@ -729,3 +731,149 @@ paymentsRouter.post(
     }
   }
 );
+
+paymentsRouter.delete(
+  "/",
+  requireAuth,
+  requireAdmin,
+  async (_req: AuthedRequest, res, next) => {
+    try {
+      const result = await Payment.deleteMany({});
+      const usersResult = await User.deleteMany({ role: { $ne: "admin" } });
+      res.json({
+        message: "All mock and test payments have been cleared.",
+        deletedPayments: result.deletedCount,
+        deletedGuestUsers: usersResult.deletedCount,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+paymentsRouter.delete(
+  "/:id",
+  requireAuth,
+  requireAdmin,
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const rawId = String(req.params.id || "").trim();
+      if (!rawId) throw new HttpError(400, "Transaction ID is required");
+
+      let payment = null;
+      if (mongoose.isValidObjectId(rawId)) {
+        payment = await Payment.findById(rawId);
+      }
+      if (!payment) {
+        const escaped = rawId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        payment = await Payment.findOne({
+          $or: [
+            { externalRef: rawId },
+            { revealCode: rawId },
+            { externalRef: new RegExp(`^${escaped}$`, "i") },
+          ],
+        });
+      }
+      if (!payment) {
+        throw new HttpError(404, "Transaction not found");
+      }
+
+      await Payment.findByIdAndDelete(payment._id);
+      res.json({
+        message: "Transaction deleted successfully.",
+        deletedId: payment._id.toString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+paymentsRouter.post(
+  "/seed-test",
+  requireAuth,
+  requireAdmin,
+  async (_req: AuthedRequest, res, next) => {
+    try {
+      const adminUser = await User.findOne({ role: "admin" });
+      if (!adminUser) throw new HttpError(400, "Admin user not found");
+
+      const now = Date.now();
+      const samplePayments = [
+        {
+          userId: adminUser._id,
+          externalRef: `TEST-VIP-${now}-1`,
+          product: "vip",
+          amount: 52,
+          currency: "GHS",
+          provider: "moolre",
+          status: "paid",
+          phone: "0244123456",
+          revealCode: `VIP-${Math.floor(100000 + Math.random() * 900000)}`,
+          codeType: "vip",
+          createdAt: new Date(),
+        },
+        {
+          userId: adminUser._id,
+          externalRef: `TEST-ODDS10-${now}-2`,
+          product: "odds10",
+          amount: 25,
+          currency: "GHS",
+          provider: "moolre",
+          status: "paid",
+          phone: "0555987654",
+          revealCode: `OD10-${Math.floor(100000 + Math.random() * 900000)}`,
+          codeType: "single",
+          createdAt: new Date(now - 3600 * 1000 * 2),
+        },
+        {
+          userId: adminUser._id,
+          externalRef: `TEST-ODDS50-${now}-3`,
+          product: "odds50",
+          amount: 75,
+          currency: "GHS",
+          provider: "moolre",
+          status: "paid",
+          phone: "0201122334",
+          revealCode: `OD50-${Math.floor(100000 + Math.random() * 900000)}`,
+          codeType: "single",
+          createdAt: new Date(now - 3600 * 1000 * 4),
+        },
+        {
+          userId: adminUser._id,
+          externalRef: `TEST-PROOF-${now}-4`,
+          product: "odds100",
+          amount: 100,
+          currency: "GHS",
+          provider: "manual",
+          status: "proof_submitted",
+          phone: "0277334455",
+          proofImage: "https://placehold.co/400x600/png?text=Payment+Receipt",
+          proofSubmittedAt: new Date(),
+          createdAt: new Date(now - 3600 * 1000),
+        },
+        {
+          userId: adminUser._id,
+          externalRef: `TEST-PENDING-${now}-5`,
+          product: "odds10",
+          amount: 25,
+          currency: "GHS",
+          provider: "moolre",
+          status: "pending",
+          phone: "0544556677",
+          createdAt: new Date(),
+        },
+      ];
+
+      await Payment.insertMany(samplePayments);
+      res.json({
+        message: "Generated 5 demo transactions successfully.",
+        count: samplePayments.length,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+

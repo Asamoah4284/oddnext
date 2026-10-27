@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { productLabel } from "@/lib/products";
 import type {
@@ -319,7 +319,12 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
       setPayouts(res.payouts || []);
       setPayoutSummary(res.summary || null);
     } catch (err) {
-      console.error("Failed to load payouts:", err);
+      console.warn("Payouts endpoint response:", err);
+      setPayouts([]);
+      setPayoutSummary({
+        forson: { earnedGhs: 0, earnedNgn: 0, availableGhs: 0, availableNgn: 0, paidGhs: 0, paidNgn: 0, pendingGhs: 0, pendingNgn: 0 },
+        asamoah: { earnedGhs: 0, earnedNgn: 0, availableGhs: 0, availableNgn: 0, paidGhs: 0, paidNgn: 0, pendingGhs: 0, pendingNgn: 0 },
+      });
     } finally {
       setLoadingPayouts(false);
     }
@@ -564,10 +569,23 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
       setMarkingId(id);
       setActionMessage("");
       setError("");
-      const res = await apiFetch<{ message: string }>(`/api/admin/payments/${id}`, {
-        method: "DELETE",
-        token,
-      });
+      const cleanId = encodeURIComponent(String(id).trim());
+      let res: { message: string };
+      try {
+        res = await apiFetch<{ message: string }>(`/api/admin/payments/${cleanId}`, {
+          method: "DELETE",
+          token,
+        });
+      } catch (adminErr) {
+        if (adminErr instanceof ApiError && adminErr.status === 404) {
+          res = await apiFetch<{ message: string }>(`/api/payments/${cleanId}`, {
+            method: "DELETE",
+            token,
+          });
+        } else {
+          throw adminErr;
+        }
+      }
       setActionMessage(res.message || "✓ Transaction deleted successfully.");
       if (previewProof?.id === id) {
         setPreviewProof(null);
@@ -592,14 +610,54 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
     try {
       setActionMessage("");
       setError("");
-      const res = await apiFetch<{ message: string }>("/api/admin/payments", {
-        method: "DELETE",
-        token,
-      });
+      let res: { message: string };
+      try {
+        res = await apiFetch<{ message: string }>("/api/admin/payments", {
+          method: "DELETE",
+          token,
+        });
+      } catch (adminErr) {
+        if (adminErr instanceof ApiError && adminErr.status === 404) {
+          res = await apiFetch<{ message: string }>("/api/payments", {
+            method: "DELETE",
+            token,
+          });
+        } else {
+          throw adminErr;
+        }
+      }
       setActionMessage(res.message || "All payments have been cleared.");
       await Promise.all([loadAnalytics(), loadPayments(1)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to clear payments");
+    }
+  }
+
+  async function handleSeedDemoPayments() {
+    if (!token) return;
+    try {
+      setActionMessage("");
+      setError("");
+      let res: { message: string };
+      try {
+        res = await apiFetch<{ message: string }>("/api/admin/payments/seed-test", {
+          method: "POST",
+          token,
+        });
+      } catch (adminErr) {
+        if (adminErr instanceof ApiError && adminErr.status === 404) {
+          res = await apiFetch<{ message: string }>("/api/payments/seed-test", {
+            method: "POST",
+            token,
+          });
+        } else {
+          throw adminErr;
+        }
+      }
+      setActionMessage(res.message || "✓ 5 demo transactions generated.");
+      await Promise.all([loadAnalytics(), loadPayments(1), loadPayouts()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate demo transactions");
     }
   }
 
@@ -687,6 +745,15 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
           >
             <DustbinIcon className="h-3.5 w-3.5 text-slate-400 group-hover/clear:text-rose-500 transition-colors" />
             <span>Clear Test Data</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleSeedDemoPayments}
+            disabled={loadingAnalytics || loadingPayments}
+            className="group/seed inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-600 hover:text-white transition shadow-xs disabled:opacity-40"
+            title="Generate demo transactions to test revenue analytics, payouts, and deletion"
+          >
+            <span>+ Seed Demo Data</span>
           </button>
         </div>
       </div>
@@ -2150,6 +2217,26 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                           )}
                           <span>Delete</span>
                         </button>
+                      ) : isPaid ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {p.revealCode ? `Code: ${p.revealCode}` : `Ref: ${p.externalRef.slice(0, 8)}…`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePayment(p.id)}
+                            disabled={markingId === p.id}
+                            className="group/del inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-400 hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50 active:scale-95 transition-all disabled:opacity-40"
+                            title="Delete transaction"
+                          >
+                            {markingId === p.id ? (
+                              <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-rose-600 border-t-transparent" />
+                            ) : (
+                              <DustbinIcon className="h-3 w-3 text-slate-400 group-hover/del:text-rose-500 transition-colors" />
+                            )}
+                            <span>Delete</span>
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -2373,9 +2460,25 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                               <span>Delete</span>
                             </button>
                           ) : isPaid ? (
-                            <span className="text-[11px] text-slate-400 font-mono">
-                              {p.revealCode ? `Code: ${p.revealCode}` : `Ref: ${p.externalRef.slice(0, 8)}…`}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] text-slate-400 font-mono">
+                                {p.revealCode ? `Code: ${p.revealCode}` : `Ref: ${p.externalRef.slice(0, 8)}…`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePayment(p.id)}
+                                disabled={markingId === p.id}
+                                className="group/del relative inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200/90 bg-white text-slate-400 hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50 active:scale-95 transition-all duration-150 disabled:opacity-40"
+                                title="Delete transaction"
+                                aria-label="Delete transaction"
+                              >
+                                {markingId === p.id ? (
+                                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-rose-600 border-t-transparent" />
+                                ) : (
+                                  <DustbinIcon className="h-3.5 w-3.5 transition-colors" />
+                                )}
+                              </button>
+                            </div>
                           ) : null}
                         </div>
                       </td>
