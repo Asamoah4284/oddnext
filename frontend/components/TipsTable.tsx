@@ -78,6 +78,16 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
   const [revealInput, setRevealInput] = useState("");
   const [revealBusy, setRevealBusy] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
+  const [activeCode, setActiveCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("oddnext_reveal_code");
+      if (saved) {
+        setActiveCode(saved);
+      }
+    }
+  }, []);
 
   const [showLookupModal, setShowLookupModal] = useState(false);
   const [lookupPhoneInput, setLookupPhoneInput] = useState("");
@@ -97,6 +107,10 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
     try {
       const res = await revealCode(target);
       setRevealedSlip(res);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("oddnext_reveal_code", target);
+      }
+      setActiveCode(target);
       if (res.product && res.product !== "vip") {
         setBoard(res.product as SlipProductId);
       }
@@ -106,6 +120,14 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
     } finally {
       setRevealBusy(false);
     }
+  };
+
+  const clearActiveCode = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("oddnext_reveal_code");
+    }
+    setActiveCode(null);
+    setRevealedSlip(null);
   };
 
   const handleLookup = async () => {
@@ -133,7 +155,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
     if (!ready) return;
     let cancelled = false;
     setLoading(true);
-    fetchTips(tab, token, board)
+    fetchTips(tab, token, board, activeCode)
       .then((next) => {
         if (!cancelled) setData(next);
       })
@@ -155,7 +177,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
     return () => {
       cancelled = true;
     };
-  }, [tab, board, token, ready, user?.vipActive, user?.entitlements]);
+  }, [tab, board, token, ready, user?.vipActive, user?.entitlements, activeCode]);
 
   const clusters = useMemo(() => {
     const groups: { code: string; tips: Tip[] }[] = [];
@@ -221,6 +243,24 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
         ))}
       </div>
 
+      {activeCode && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-fire/30 bg-fire/10 px-4 py-2.5 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-fire animate-pulse" />
+            <span className="text-mute">
+              Active VIP / Reveal Pass: <strong className="font-mono text-cream font-bold">{activeCode}</strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={clearActiveCode}
+            className="text-xs font-semibold text-mute hover:text-fire underline"
+          >
+            Clear / Switch Code
+          </button>
+        </div>
+      )}
+
       <div className="mb-4 flex w-full rounded-full bg-surface p-1 ring-1 ring-line md:w-fit">
         {days.map((item) => (
           <button
@@ -244,6 +284,8 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
             revealCode={revealedSlip.code}
             remainingUnlocks={revealedSlip.remainingUnlocks}
             daysRemaining={revealedSlip.daysRemaining}
+            dailyRemainingUnlocks={revealedSlip.dailyRemainingUnlocks}
+            maxDailyUnlocks={revealedSlip.maxDailyUnlocks}
             graceMinutes={revealedSlip.graceMinutesRemaining}
           />
           <button
@@ -537,7 +579,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                         </div>
                         <p className="mt-1 text-[11px] text-mute">
                           {c.type === "vip"
-                            ? `${c.daysRemaining} days left`
+                            ? `${c.daysRemaining} days left · ${c.dailyRemainingUnlocks ?? 3}/${c.maxDailyUnlocks ?? 3} unlocks left today`
                             : `${c.remainingUnlocks} use${c.remainingUnlocks === 1 ? "" : "s"} left`}
                         </p>
                       </div>

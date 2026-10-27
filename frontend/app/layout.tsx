@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Big_Shoulders, IBM_Plex_Mono, Manrope } from "next/font/google";
+import { IBM_Plex_Mono, Manrope, Oswald } from "next/font/google";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ProductsProvider } from "@/components/ProductsProvider";
 import { BRAND_NAME, SITE_URL, fetchProducts } from "@/lib/api";
@@ -11,9 +11,9 @@ const sans = Manrope({
   variable: "--font-sans",
 });
 
-const display = Big_Shoulders({
+const display = Oswald({
   subsets: ["latin"],
-  weight: ["700", "800"],
+  weight: ["700"],
   variable: "--font-display",
 });
 

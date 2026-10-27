@@ -197,43 +197,42 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Title & overview banner */}
-      <div className="card border-line bg-surface p-5 sm:p-6">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5 shadow-2xs">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <p className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+              <span className="inline-flex h-2 w-2 rounded-full bg-blue-600" />
+              <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">
                 Database Synced · Live Pricing Engine
               </p>
             </div>
-            <h2 className="mt-1 font-sans text-xl font-extrabold sm:text-2xl text-cream">
+            <h2 className="mt-1 font-sans text-lg font-bold sm:text-xl text-slate-900">
               Odds Board & VIP Prices (Ghana & Nigeria)
             </h2>
-            <p className="mt-1 text-sm text-mute">
-              Set the exact checkout prices saved directly to MongoDB.
-              Changes apply instantly across live betting boards and payment checkouts.
+            <p className="mt-1 text-xs text-slate-500">
+              Set exact checkout prices saved to MongoDB. Changes apply immediately to public boards and payment checkouts.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center rounded-xl border border-line bg-paper px-3 py-1.5 text-xs shadow-sm focus-within:border-emerald-500">
-              <span className="text-mute mr-1.5 font-medium">1 GHS =</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-2xs focus-within:border-blue-600">
+              <span className="text-slate-400 mr-1.5 font-medium">1 GHS =</span>
               <input
                 type="number"
                 step="0.1"
                 min="1"
                 value={exchangeRate}
                 onChange={(e) => setExchangeRate(Math.max(1, Number(e.target.value)))}
-                className="w-16 bg-transparent font-mono font-bold text-emerald-400 outline-none"
+                className="w-16 bg-transparent font-mono font-bold text-blue-600 outline-none"
                 title="Current exchange rate in NGN (e.g. 114)"
               />
-              <span className="text-mute ml-1 font-medium">NGN</span>
+              <span className="text-slate-400 ml-1 font-medium">NGN</span>
             </div>
             <button
               type="button"
               onClick={() => applyRateToAll(exchangeRate)}
-              className="btn-outline px-3.5 py-2 text-xs font-semibold text-emerald-400 hover:text-white"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-slate-100 transition shadow-2xs"
               title={`Recalculate all Nigeria prices using 1 GHS = ${exchangeRate} NGN`}
             >
               Sync All to ₦{exchangeRate}
@@ -241,7 +240,7 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
             <button
               type="button"
               onClick={resetToDefaults}
-              className="btn-outline px-3.5 py-2 text-xs text-mute hover:text-white"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 transition shadow-2xs"
             >
               Reset Defaults
             </button>
@@ -250,26 +249,25 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
       </div>
 
       {error && (
-        <div className="rounded-xl border border-lost/40 bg-lost/10 p-4 text-sm text-lost">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-700">
           <p className="font-semibold">Error saving prices:</p>
           <p>{error}</p>
         </div>
       )}
 
       {savedSuccess && (
-        <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-400">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-800">
           <p className="font-semibold">✓ Prices updated successfully!</p>
-          <p className="text-xs opacity-90">
-            Live prices for Ghana and Nigeria have been updated across the
-            entire platform and payment gateway.
+          <p className="mt-0.5 opacity-90">
+            Live prices for Ghana and Nigeria have been updated across the entire platform and payment gateway.
           </p>
         </div>
       )}
 
       {/* Pricing list / cards */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {loading ? (
-          <div className="card p-10 text-center text-sm text-mute">
+          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-xs text-slate-500">
             Loading current prices…
           </div>
         ) : (
@@ -277,17 +275,17 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
             const meta = productMeta[item.id] ?? {
               tag: "Board",
               description: item.label,
-              badgeColor: "bg-surface text-mute border-line",
+              badgeColor: "bg-slate-100 text-slate-600 border-slate-200",
             };
             const isVip = item.id === "vip";
 
             return (
               <div
                 key={item.id}
-                className={`card p-4 sm:p-5 transition-all ${
+                className={`rounded-2xl border p-4 sm:p-5 transition-all shadow-2xs ${
                   isVip
-                    ? "border-fire/40 bg-gradient-to-r from-fire/10 via-surface to-surface"
-                    : "border-line bg-surface"
+                    ? "border-blue-200 bg-blue-50/20"
+                    : "border-slate-200/90 bg-white hover:border-slate-300"
                 }`}
               >
                 <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr_auto] lg:items-center">
@@ -295,7 +293,7 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${meta.badgeColor}`}
+                        className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${meta.badgeColor}`}
                       >
                         {meta.tag}
                       </span>
@@ -303,19 +301,19 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
                         type="text"
                         value={item.label}
                         onChange={(e) => updateLabel(item.id, e.target.value)}
-                        className="bg-transparent font-sans text-base font-bold text-cream border-b border-dashed border-transparent hover:border-line focus:border-fire focus:outline-none transition-colors"
+                        className="bg-transparent font-sans text-sm font-bold text-slate-900 border-b border-dashed border-transparent hover:border-slate-300 focus:border-blue-600 focus:outline-none transition-colors"
                         title="Click to edit board title"
                       />
                     </div>
-                    <p className="mt-1 text-xs text-mute">{meta.description}</p>
+                    <p className="mt-1 text-xs text-slate-500">{meta.description}</p>
                     <div className="mt-2 flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-mute">
-                        Live Preview:
+                      <span className="text-[11px] font-mono text-slate-400">
+                        Live Display:
                       </span>
-                      <span className="rounded bg-black/40 px-2 py-0.5 font-mono text-xs font-bold text-fire">
-                        GHS {Number(item.priceGhs).toLocaleString()}
+                      <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs font-bold text-blue-600">
+                        GH₵ {Number(item.priceGhs).toLocaleString()}
                       </span>
-                      <span className="rounded bg-black/40 px-2 py-0.5 font-mono text-xs font-bold text-emerald-400">
+                      <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs font-bold text-blue-600">
                         ₦{Number(item.priceNgn).toLocaleString("en-NG")}
                       </span>
                     </div>
@@ -323,12 +321,12 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
 
                   {/* Ghana Input (GHS) */}
                   <div>
-                    <label className="block text-xs font-semibold text-mute">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
                       🇬🇭 Ghana Price (GHS)
                     </label>
-                    <div className="mt-1.5 flex items-center rounded-xl border border-line bg-paper px-3 py-1.5 focus-within:border-fire">
-                      <span className="mr-2 text-xs font-extrabold text-fire">
-                        GHS
+                    <div className="mt-1.5 flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 focus-within:bg-white focus-within:border-blue-600">
+                      <span className="mr-2 font-mono text-xs font-extrabold text-blue-600">
+                        GH₵
                       </span>
                       <input
                         type="number"
@@ -343,7 +341,7 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
                             Math.max(0, Number(e.target.value))
                           )
                         }
-                        className="w-full bg-transparent font-mono text-sm font-bold text-cream outline-none"
+                        className="w-full bg-transparent font-mono text-xs font-bold text-slate-900 outline-none"
                         placeholder="e.g. 30"
                       />
                     </div>
@@ -352,20 +350,20 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
                   {/* Nigeria Input (NGN) */}
                   <div>
                     <div className="flex items-center justify-between">
-                      <label className="block text-xs font-semibold text-mute">
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">
                         🇳🇬 Nigeria Price (NGN)
                       </label>
                       <button
                         type="button"
                         onClick={() => autoCalculateNgn(item.id, exchangeRate)}
-                        className="text-[11px] text-mute hover:text-emerald-400 underline"
+                        className="text-[10px] text-blue-600 hover:underline font-mono"
                         title={`Calculate using 1 GHS = ${exchangeRate} NGN`}
                       >
                         auto calc (₦{exchangeRate})
                       </button>
                     </div>
-                    <div className="mt-1.5 flex items-center rounded-xl border border-line bg-paper px-3 py-1.5 focus-within:border-emerald-500">
-                      <span className="mr-2 text-xs font-extrabold text-emerald-400">
+                    <div className="mt-1.5 flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 focus-within:bg-white focus-within:border-blue-600">
+                      <span className="mr-2 font-mono text-xs font-extrabold text-blue-600">
                         ₦
                       </span>
                       <input
@@ -381,7 +379,7 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
                             Math.max(0, Number(e.target.value))
                           )
                         }
-                        className="w-full bg-transparent font-mono text-sm font-bold text-cream outline-none"
+                        className="w-full bg-transparent font-mono text-xs font-bold text-slate-900 outline-none"
                         placeholder="e.g. 3600"
                       />
                     </div>
@@ -389,8 +387,8 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
 
                   {/* Quick Summary Pill */}
                   <div className="hidden lg:block text-right">
-                    <p className="text-[11px] text-mute">Status</p>
-                    <span className="inline-block mt-1 text-xs font-semibold text-emerald-400">
+                    <p className="text-[10px] uppercase font-bold text-slate-400">Status</p>
+                    <span className="inline-block mt-1 text-xs font-semibold text-emerald-600">
                       Active
                     </span>
                   </div>
@@ -402,16 +400,16 @@ export function AdminPricesEditor({ token }: AdminPricesEditorProps) {
       </div>
 
       {/* Save Action Bar */}
-      <div className="sticky bottom-4 z-20 flex items-center justify-between gap-4 rounded-2xl border border-line bg-surface/95 p-4 backdrop-blur shadow-2xl">
-        <p className="text-xs text-mute">
-          Click <span className="font-semibold text-cream">Save All Prices</span>{" "}
-          to apply changes to the live database and payment gateway.
+      <div className="sticky bottom-4 z-20 flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/95 p-4 backdrop-blur-md shadow-xl">
+        <p className="text-xs text-slate-500">
+          Click <span className="font-semibold text-slate-800">Save All Prices</span>{" "}
+          to commit changes to the live database and payment gateway.
         </p>
         <button
           type="button"
           onClick={handleSave}
           disabled={saving || loading}
-          className="btn-primary min-w-[160px] px-6 py-2.5 text-sm font-bold shadow-lg shadow-fire/20"
+          className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm transition"
         >
           {saving ? "Saving…" : "Save All Prices"}
         </button>

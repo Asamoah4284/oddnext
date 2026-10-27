@@ -58,9 +58,47 @@ codesRouter.post("/reveal", async (req, res, next) => {
         }
       }
 
-      const tips = await loadPaidTips("vip");
+      // Daily unlock limit: at most 3 times a day everyday for 7 days
+      const todayKey = now.toISOString().split("T")[0];
+      if (payment.dailyUnlockDate !== todayKey) {
+        payment.dailyUnlockDate = todayKey;
+        payment.dailyUnlockCount = 0;
+      }
+
+      const isGracePeriod = Boolean(
+        payment.activeSessionExpiresAt &&
+          payment.activeSessionExpiresAt > now &&
+          payment.activeSessionDeviceId &&
+          deviceId &&
+          payment.activeSessionDeviceId === deviceId
+      );
+
+      const maxDaily = payment.maxDailyUnlocks || 3;
       const msLeft = payment.vipExpiresAt ? payment.vipExpiresAt.getTime() - now.getTime() : 0;
       const daysRemaining = Math.max(1, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+
+      if (!isGracePeriod) {
+        if ((payment.dailyUnlockCount ?? 0) >= maxDaily) {
+          throw new HttpError(
+            403,
+            `You have reached your daily limit of ${maxDaily} unlocks for today. Your VIP pass resets tomorrow (${daysRemaining} day${daysRemaining === 1 ? "" : "s"} remaining).`
+          );
+        }
+        payment.dailyUnlockCount = (payment.dailyUnlockCount ?? 0) + 1;
+        payment.unlockCount = (payment.unlockCount ?? 0) + 1;
+        payment.lastUnlockedAt = now;
+        payment.activeSessionExpiresAt = new Date(now.getTime() + 30 * 60 * 1000); // 30-min window
+        payment.activeSessionDeviceId =
+          deviceId || "device_" + Math.random().toString(36).substring(2, 8);
+        await payment.save();
+      }
+
+      const tips = await loadPaidTips("vip");
+      const sessionLeft = payment.activeSessionExpiresAt
+        ? payment.activeSessionExpiresAt.getTime() - now.getTime()
+        : 0;
+      const graceMinutes = Math.max(0, Math.ceil(sessionLeft / 60000));
+      const dailyRemaining = Math.max(0, maxDaily - (payment.dailyUnlockCount ?? 0));
 
       res.json({
         status: "ok",
@@ -69,6 +107,10 @@ codesRouter.post("/reveal", async (req, res, next) => {
         code: payment.revealCode,
         vipExpiresAt: payment.vipExpiresAt,
         daysRemaining,
+        dailyUnlockCount: payment.dailyUnlockCount,
+        maxDailyUnlocks: maxDaily,
+        dailyRemainingUnlocks: dailyRemaining,
+        graceMinutesRemaining: graceMinutes,
         devicesCount: (payment.deviceIds ?? []).length,
         maxDevices: 2,
         tips,
@@ -153,6 +195,11 @@ codesRouter.post("/lookup", async (req, res, next) => {
         const daysRemaining = isVip
           ? Math.max(1, Math.ceil(msLeft / (1000 * 60 * 60 * 24)))
           : null;
+        const todayKey = now.toISOString().split("T")[0];
+        const isToday = p.dailyUnlockDate === todayKey;
+        const dailyCount = isToday ? (p.dailyUnlockCount ?? 0) : 0;
+        const maxDaily = p.maxDailyUnlocks || 3;
+        const dailyRemaining = isVip ? Math.max(0, maxDaily - dailyCount) : null;
         const remainingUnlocks = isVip
           ? null
           : Math.max(0, (p.maxUnlocks || 2) - (p.unlockCount ?? 0));
@@ -164,6 +211,8 @@ codesRouter.post("/lookup", async (req, res, next) => {
           createdAt: p.createdAt,
           remainingUnlocks,
           daysRemaining,
+          dailyRemainingUnlocks: dailyRemaining,
+          maxDailyUnlocks: isVip ? maxDaily : null,
         };
       });
 

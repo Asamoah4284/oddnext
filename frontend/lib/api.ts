@@ -108,15 +108,30 @@ export async function fetchProducts(): Promise<ProductItem[]> {
   }
 }
 
+export const REVEAL_CODE_KEY = "oddnext_reveal_code";
+
 export async function fetchTips(
   tab: "yesterday" | "today",
   token?: string | null,
-  board: SlipProductId = "odds10"
+  board: SlipProductId = "odds10",
+  code?: string | null
 ): Promise<TipsResponse> {
+  const activeCode =
+    code ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem(REVEAL_CODE_KEY)
+      : null);
+
+  const headers: Record<string, string> = {};
+  if (activeCode) {
+    headers["x-reveal-code"] = activeCode;
+  }
+
   return apiFetch<TipsResponse>(`/api/tips?tab=${tab}&board=${board}`, {
     token,
-    cache: token ? "no-store" : undefined,
-    next: token ? undefined : { revalidate: 30 },
+    headers,
+    cache: token || activeCode ? "no-store" : undefined,
+    next: token || activeCode ? undefined : { revalidate: 30 },
   });
 }
 

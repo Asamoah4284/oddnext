@@ -14,6 +14,9 @@ export type RevealResponse = {
   graceMinutesRemaining?: number;
   vipExpiresAt?: string;
   daysRemaining?: number;
+  dailyUnlockCount?: number;
+  maxDailyUnlocks?: number;
+  dailyRemainingUnlocks?: number;
   devicesCount?: number;
   maxDevices?: number;
 };
@@ -25,6 +28,8 @@ export type LookupCodeItem = {
   createdAt: string;
   remainingUnlocks: number | null;
   daysRemaining: number | null;
+  dailyRemainingUnlocks?: number | null;
+  maxDailyUnlocks?: number | null;
 };
 
 export type LookupResponse = {

@@ -1,4 +1,4 @@
-import { isSlipProductId } from "../products.js";
+import { SLIP_PRODUCT_IDS, isSlipProductId } from "../products.js";
 import { Payment } from "../models/Payment.js";
 import { Tip } from "../models/Tip.js";
 import { User } from "../models/User.js";
@@ -24,14 +24,40 @@ export type PaidSlipTip = {
 };
 
 export async function loadPaidTips(product: string): Promise<PaidSlipTip[]> {
+  if (product === "vip") {
+    // For VIP, fetch active games across each board so user gets full access
+    const results: PaidSlipTip[] = [];
+    for (const board of SLIP_PRODUCT_IDS) {
+      const boardTips = await loadPaidTips(board);
+      results.push(...boardTips);
+    }
+    return results;
+  }
+
   const { from, to } = dayRange(0);
   const filter: Record<string, unknown> = {
+    product,
     kickoffAt: { $gte: from, $lte: to },
   };
-  if (isSlipProductId(product)) {
-    filter.product = product;
+  let tips = await Tip.find(filter).sort({ kickoffAt: 1, league: 1 });
+
+  // Fallback: If no tips found for today's strict day window, fetch active pending tips or recent within 48h
+  if (tips.length === 0) {
+    const fallbackFilter: Record<string, unknown> = {
+      product,
+      $or: [
+        { status: "pending" },
+        { kickoffAt: { $gte: new Date(Date.now() - 48 * 60 * 60 * 1000) } },
+      ],
+    };
+    tips = await Tip.find(fallbackFilter).sort({ kickoffAt: 1, league: 1 }).limit(100);
+
+    // If still 0, grab the most recent tips in the system
+    if (tips.length === 0) {
+      tips = await Tip.find({ product }).sort({ kickoffAt: -1, league: 1 }).limit(100);
+    }
   }
-  const tips = await Tip.find(filter).sort({ kickoffAt: 1, league: 1 });
+
   return tips.map((tip) => ({
     id: tip._id.toString(),
     kickoffAt: tip.kickoffAt,
@@ -41,7 +67,7 @@ export async function loadPaidTips(product: string): Promise<PaidSlipTip[]> {
     prediction: tip.prediction,
     odds: tip.odds,
     bookingCode: tip.bookingCode || "",
-    product: tip.product || "odds10",
+    product: tip.product || product,
   }));
 }
 
@@ -124,7 +150,8 @@ export async function fulfillVipPayment(
   }
   if (product === "vip") {
     payment.codeType = "vip";
-    payment.maxUnlocks = 999999;
+    payment.maxUnlocks = 21; // at most 3 times a day for 7 days
+    payment.maxDailyUnlocks = 3;
     if (!payment.vipExpiresAt) {
       payment.vipExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     }

@@ -46,13 +46,59 @@ function serializeTip(
   };
 }
 
+import { Payment } from "../models/Payment.js";
+import { normalizeRevealCode } from "../services/codes.js";
+
 tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
   try {
     const tab = tabSchema.parse(req.query.tab ?? "today");
     const board = boardSchema.parse(req.query.board ?? "odds10") as SlipProductId;
     res.setHeader("Cache-Control", "private, no-store");
-    const vipAccess = Boolean(req.user?.vipActive);
-    const boardAccess = canAccessBoard(req.user, board);
+
+    const revealCodeHeader =
+      (req.headers["x-reveal-code"] as string) ||
+      (req.query.code as string);
+
+    let codeVipAccess = false;
+    let codeBoardAccess = false;
+
+    if (revealCodeHeader) {
+      const normalized = normalizeRevealCode(revealCodeHeader);
+      const payment = await Payment.findOne({
+        revealCode: normalized,
+        status: "paid",
+      });
+      if (payment) {
+        const now = new Date();
+        const isVip = payment.codeType === "vip" || payment.product === "vip";
+        if (isVip && (!payment.vipExpiresAt || payment.vipExpiresAt > now)) {
+          const todayKey = now.toISOString().split("T")[0];
+          const isToday = payment.dailyUnlockDate === todayKey;
+          const dailyCount = isToday ? (payment.dailyUnlockCount ?? 0) : 0;
+          const maxDaily = payment.maxDailyUnlocks || 3;
+          const inActiveSession = Boolean(
+            payment.activeSessionExpiresAt && payment.activeSessionExpiresAt > now
+          );
+          // Grant access if within daily limit or within active session window
+          if (dailyCount < maxDaily || inActiveSession) {
+            codeVipAccess = true;
+            codeBoardAccess = true;
+          }
+        } else if (payment.product === board) {
+          const max = payment.maxUnlocks || 2;
+          const isGrace = Boolean(
+            payment.activeSessionExpiresAt &&
+              payment.activeSessionExpiresAt > now
+          );
+          if ((payment.unlockCount ?? 0) <= max || isGrace) {
+            codeBoardAccess = true;
+          }
+        }
+      }
+    }
+
+    const vipAccess = Boolean(req.user?.vipActive) || codeVipAccess;
+    const boardAccess = canAccessBoard(req.user, board) || codeBoardAccess;
 
     let dateFilter: Record<string, unknown> = {};
     if (tab === "yesterday") {
@@ -75,10 +121,29 @@ tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
       return;
     }
 
-    const tips = await Tip.find({
+    let tips = await Tip.find({
       ...dateFilter,
       product: board,
     }).sort({ kickoffAt: 1, league: 1 });
+
+    // Fallback: If today has no tips for this board, load pending or recent active tips
+    if (tab === "today" && tips.length === 0) {
+      tips = await Tip.find({
+        product: board,
+        $or: [
+          { status: "pending" },
+          { kickoffAt: { $gte: new Date(Date.now() - 48 * 60 * 60 * 1000) } },
+        ],
+      })
+        .sort({ kickoffAt: 1, league: 1 })
+        .limit(100);
+
+      if (tips.length === 0) {
+        tips = await Tip.find({ product: board })
+          .sort({ kickoffAt: -1, league: 1 })
+          .limit(100);
+      }
+    }
 
     res.json({
       tab,
