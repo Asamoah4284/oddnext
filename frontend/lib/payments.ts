@@ -11,6 +11,8 @@ export type PaidTip = {
   odds: number;
   bookingCode: string;
   league: string;
+  product?: string;
+  kickoffAt?: string | Date;
 };
 
 export type PaymentVerify = {
