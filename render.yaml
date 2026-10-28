@@ -36,3 +36,7 @@ services:
         value: admin@system.com
       - key: ADMIN_PASSWORD
         sync: false
+      - key: PUBLIC_BACKEND_URL
+        value: https://oddnext.onrender.com
+      - key: CALLBACK_URL
+        value: https://oddnext.onrender.com/api/payments/webhook

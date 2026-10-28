@@ -17,6 +17,23 @@ function siteUrl(): string {
   return "http://localhost:3000";
 }
 
+export function getApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (
+      host &&
+      host !== "localhost" &&
+      host !== "127.0.0.1" &&
+      (!process.env.NEXT_PUBLIC_API_URL ||
+        process.env.NEXT_PUBLIC_API_URL.includes("localhost") ||
+        process.env.NEXT_PUBLIC_API_URL.includes("127.0.0.1"))
+    ) {
+      return `${window.location.protocol}//${host}:4000`;
+    }
+  }
+  return envUrl(process.env.NEXT_PUBLIC_API_URL, "http://localhost:4000");
+}
+
 export const API_URL = envUrl(
   process.env.NEXT_PUBLIC_API_URL,
   "http://localhost:4000"
@@ -44,7 +61,7 @@ type FetchOptions = RequestInit & {
 
 export function pingLiveServer(): void {
   if (typeof window === "undefined") return;
-  fetch(`${API_URL}/api/health`, { method: "GET" }).catch(() => {});
+  fetch(`${getApiBaseUrl()}/api/health`, { method: "GET" }).catch(() => {});
 }
 
 export async function apiFetch<T>(
@@ -53,13 +70,14 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const { token, headers, next, ...rest } = options;
   const timeoutMs = 50000;
+  const base = getApiBaseUrl();
   let res: Response | undefined;
   let lastErr: unknown;
 
   // Try up to 2 times for cold-starts
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      res = await fetch(`${API_URL}${path}`, {
+      res = await fetch(`${base}${path}`, {
         ...rest,
         headers: {
           "Content-Type": "application/json",

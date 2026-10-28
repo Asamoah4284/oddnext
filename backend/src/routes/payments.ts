@@ -106,11 +106,14 @@ function resolveReturnOrigin(req: AuthedRequest, requested?: string): string {
 function formatMoolreUrl(targetUrl: string, fallbackBase: string): string {
   try {
     const parsed = new URL(targetUrl);
+    const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname);
     if (
       parsed.protocol === "https:" &&
       !parsed.port &&
+      !isIp &&
       !parsed.hostname.includes("localhost") &&
-      !parsed.hostname.includes("127.0.0.1")
+      !parsed.hostname.includes("127.0.0.1") &&
+      !parsed.hostname.includes("onrender.com")
     ) {
       return targetUrl;
     }
@@ -395,23 +398,25 @@ paymentsRouter.post(
       const publicBackend =
         process.env.PUBLIC_BACKEND_URL ||
         process.env.RENDER_EXTERNAL_URL ||
+        config.publicBackendUrl ||
         "https://oddnext.onrender.com";
-      const publicFrontend =
-        process.env.PUBLIC_FRONTEND_URL ||
-        (returnOrigin.startsWith("https://")
-          ? returnOrigin
-          : config.frontendUrl.startsWith("https://") && !config.frontendUrl.includes("localhost")
-          ? config.frontendUrl
-          : "https://oddnext.vercel.app");
+      const safePublicFrontend =
+        process.env.PUBLIC_FRONTEND_URL &&
+        process.env.PUBLIC_FRONTEND_URL.startsWith("https://") &&
+        !process.env.PUBLIC_FRONTEND_URL.includes("oddnext.onrender.com") &&
+        !process.env.PUBLIC_FRONTEND_URL.includes("localhost")
+          ? process.env.PUBLIC_FRONTEND_URL
+          : "https://oddnext.vercel.app";
 
-      const callbackBase = process.env.CALLBACK_URL || publicBackend;
+      const callbackBase =
+        process.env.CALLBACK_URL || config.callbackUrl || publicBackend;
       const callback = callbackBase.includes("/api/payments/webhook")
         ? callbackBase
         : formatMoolreUrl(
             `${req.protocol}://${req.get("host")}/api/payments/webhook`,
             callbackBase
           );
-      const moolreRedirect = formatMoolreUrl(redirect, publicFrontend);
+      const moolreRedirect = formatMoolreUrl(redirect, safePublicFrontend);
 
       if (!hasMoolreCredentials()) {
         if (!config.isDev) {

@@ -23,6 +23,13 @@ export const config = {
   ghsToNgn: Number(process.env.GHS_TO_NGN ?? 114),
   adminEmail: process.env.ADMIN_EMAIL ?? "admin@system.com",
   adminPassword: process.env.ADMIN_PASSWORD ?? "admin1234",
+  publicBackendUrl:
+    process.env.PUBLIC_BACKEND_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    "https://oddnext.onrender.com",
+  callbackUrl:
+    process.env.CALLBACK_URL ||
+    "https://oddnext.onrender.com/api/payments/webhook",
   moolre: {
     apiUser: (process.env.MOOLRE_API_USER || process.env.MOOLRE_USERNAME || "").replace(
       /\s/g,
