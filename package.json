@@ -11,6 +11,9 @@
     "dev:backend": "npm run dev --workspace=backend",
     "seed": "npm run seed --workspace=backend",
     "seed:odds": "npm run seed:odds --workspace=backend",
-    "build": "npm run build --workspace=backend && npm run build --workspace=frontend"
+    "build": "npm run build --workspace=backend",
+    "build:backend": "npm run build --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "start": "npm start --workspace=backend"
   }
 }
