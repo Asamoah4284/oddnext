@@ -71,18 +71,26 @@ function PaymentReturnInner() {
     async function confirm(poll = false) {
       if (settled.current) return true;
       try {
-        if (simulate && !poll) {
-          await apiFetch("/api/payments/simulate", {
-            method: "POST",
-            token,
-            body: JSON.stringify({ reference }),
-          });
+        if (simulate && !poll && !reference.startsWith("ng_")) {
+          try {
+            await apiFetch("/api/payments/simulate", {
+              method: "POST",
+              token,
+              body: JSON.stringify({ reference }),
+            });
+          } catch {
+            // Ignore simulation errors for manual transfers
+          }
         }
         const result = await verifyCheckout(reference, token, poll);
         if (cancelled) return;
         if (result.status === "paid") {
           settled.current = true;
           clearPayRef();
+          if (result.revealCode && typeof window !== "undefined") {
+            localStorage.setItem("oddnext_reveal_code", result.revealCode);
+          }
+
 
           const isVip = result.product === "vip" || result.codeType === "vip";
           let daysLeft: number | null = null;

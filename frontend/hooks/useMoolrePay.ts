@@ -123,11 +123,10 @@ export function useMoolrePay() {
           }),
         });
         const nextToken = data.token ?? token;
-        if (data.token && data.user) {
-          applySession(data.token, data.user);
-        }
+        // Do not bind guest session to browser before payment actually completes
 
         if (data.provider === "opay" || data.instructions) {
+
           if (!data.reference) {
             throw new Error("Could not initialize Opay transfer reference.");
           }
@@ -186,20 +185,20 @@ export function useMoolrePay() {
   const handlePaid = useCallback(
     async (result: PaymentVerify) => {
       clearPayRef();
-      if (result.slipViewed || !result.tips?.length) {
-        setPaid(null);
-        setCheckout(null);
-        setOpayCheckout(null);
-        return;
-      }
       setPaid(result);
       setCheckout(null);
       setOpayCheckout(null);
-      await ackSlip(result.reference ?? "", token);
-      await refresh();
+      if (result.revealCode && typeof window !== "undefined") {
+        localStorage.setItem("oddnext_reveal_code", result.revealCode);
+      }
+      if (result.reference) {
+        await ackSlip(result.reference, token).catch(() => {});
+      }
+      await refresh().catch(() => {});
     },
     [refresh, token]
   );
+
 
   const dismissPaid = useCallback(() => {
     setPaid(null);

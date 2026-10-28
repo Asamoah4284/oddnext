@@ -17,9 +17,11 @@ import { config } from "../config.js";
 import { Payment } from "../models/Payment.js";
 import { Payout } from "../models/Payout.js";
 import { fulfillVipPayment } from "../services/vip.js";
+import { generateUniqueRevealCode } from "../services/codes.js";
 import { HttpError } from "../utils/httpError.js";
 
 export const adminRouter = Router();
+
 
 adminRouter.use(requireAuth, requireAdmin);
 
@@ -629,48 +631,61 @@ adminRouter.get("/payments", async (req, res, next) => {
         .limit(limit),
     ]);
 
-    const serialized = payments.map((p) => {
-      const userDoc = p.userId as unknown as {
-        _id?: unknown;
-        name?: string;
-        email?: string;
-        phone?: string;
-      } | null;
-      const amount = p.amount || 0;
-      return {
-        id: p._id.toString(),
-        externalRef: p.externalRef,
-        product: p.product || "vip",
-        amount,
-        currency: p.currency || "GHS",
-        provider: p.provider || "moolre",
-        status: p.status,
-        phone: p.phone,
-        proofImage: p.proofImage || "",
-        proofNote: p.proofNote || "",
-        proofSubmittedAt: p.proofSubmittedAt || null,
-        revealCode: p.revealCode || "",
-        smsSent: p.smsSent,
-        slipViewed: p.slipViewed,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
-        hisShare: Math.round(amount * 0.6 * 100) / 100,
-        myShare: Math.round(amount * 0.4 * 100) / 100,
-        customer: userDoc
-          ? {
-              id: userDoc._id?.toString() || "",
-              name: userDoc.name || "",
-              email: userDoc.email || "",
-              phone: userDoc.phone || p.phone || "",
-            }
-          : {
-              id: "",
-              name: "Buyer",
-              email: "",
-              phone: p.phone || "",
-            },
-      };
-    });
+    const serialized = await Promise.all(
+      payments.map(async (p) => {
+        let code = p.revealCode || "";
+        if (p.status === "paid" && !code) {
+          try {
+            code = await generateUniqueRevealCode(p.product || "vip");
+            p.revealCode = code;
+            await Payment.updateOne({ _id: p._id }, { $set: { revealCode: code } });
+          } catch {
+            // ignore
+          }
+        }
+        const userDoc = p.userId as unknown as {
+          _id?: unknown;
+          name?: string;
+          email?: string;
+          phone?: string;
+        } | null;
+        const amount = p.amount || 0;
+        return {
+          id: p._id.toString(),
+          externalRef: p.externalRef,
+          product: p.product || "vip",
+          amount,
+          currency: p.currency || "GHS",
+          provider: p.provider || "moolre",
+          status: p.status,
+          phone: p.phone,
+          proofImage: p.proofImage || "",
+          proofNote: p.proofNote || "",
+          proofSubmittedAt: p.proofSubmittedAt || null,
+          revealCode: code,
+          smsSent: p.smsSent,
+          slipViewed: p.slipViewed,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+          hisShare: Math.round(amount * 0.6 * 100) / 100,
+          myShare: Math.round(amount * 0.4 * 100) / 100,
+          customer: userDoc
+            ? {
+                id: userDoc._id?.toString() || "",
+                name: userDoc.name || "",
+                email: userDoc.email || "",
+                phone: userDoc.phone || p.phone || "",
+              }
+            : {
+                id: "",
+                name: "Buyer",
+                email: "",
+                phone: p.phone || "",
+              },
+        };
+      })
+    );
+
 
     res.json({
       payments: serialized,

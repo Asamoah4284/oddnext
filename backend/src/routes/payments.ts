@@ -737,12 +737,16 @@ paymentsRouter.post(
       if (payment.userId.toString() !== req.user!.id && req.user!.role !== "admin") {
         throw new HttpError(403, "You cannot simulate this payment");
       }
+      if (payment.provider === "opay" || payment.provider === "manual") {
+        throw new HttpError(400, "OPay manual transfers must be verified and approved by the admin in the dashboard.");
+      }
       const result = await fulfillVipPayment(reference, {
         moolreTxId: "simulated",
         rawCallback: { simulated: true },
       });
       const tips = await loadPaidTips(result.product);
       res.json({ status: "paid", reference, tips, ...result });
+
     } catch (err) {
       next(err);
     }

@@ -22,9 +22,19 @@ app.set("trust proxy", 1);
 app.use(helmet());
 app.use(
   cors({
-    origin: config.isDev
-      ? true
-      : [frontendOrigin, "http://localhost:3000", "http://127.0.0.1:3000"],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+        return callback(null, true);
+      }
+      if (/^https:\/\/([a-z0-9-]+\.)?vercel\.app$/i.test(origin) || origin.includes("oddnext")) {
+        return callback(null, true);
+      }
+      if (frontendOrigin && origin === frontendOrigin) {
+        return callback(null, true);
+      }
+      callback(null, true);
+    },
     credentials: true,
   })
 );
@@ -47,10 +57,11 @@ const authLimiter = rateLimit({
 
 const paymentLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 80,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
 });
+
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "oddnext-api" });

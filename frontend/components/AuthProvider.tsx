@@ -8,7 +8,8 @@ import {
   useMemo,
   useState,
 } from "react";
-import { apiFetch, AUTH_EXPIRED_EVENT, TOKEN_KEY } from "@/lib/api";
+import { apiFetch, AUTH_EXPIRED_EVENT, TOKEN_KEY, pingLiveServer } from "@/lib/api";
+
 import type { AuthUser } from "@/lib/types";
 
 type AuthContextValue = {
@@ -63,8 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    pingLiveServer();
     void refresh();
   }, [refresh]);
+
 
   useEffect(() => {
     const onExpired = () => {

@@ -2070,7 +2070,34 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                           </a>
                         )}
                       </div>
+                      {/* Mobile Access Code badge */}
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Access Code:</span>
+                        {p.revealCode ? (
+                          <div className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 border border-emerald-200 text-emerald-800 font-mono font-bold text-[11px]">
+                            <span>🔑 {p.revealCode}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void navigator.clipboard.writeText(p.revealCode || "");
+                                setActionMessage(`Copied access code ${p.revealCode}`);
+                                setTimeout(() => setActionMessage(""), 2000);
+                              }}
+                              className="text-emerald-700 hover:text-emerald-950 font-sans text-[10px] underline ml-0.5"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        ) : isPaid ? (
+                          <span className="font-mono text-[10px] text-slate-400">Generating…</span>
+                        ) : (
+                          <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60 font-medium">
+                            Pending Approval
+                          </span>
+                        )}
+                      </div>
                     </div>
+
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                         isPaid
@@ -2253,6 +2280,9 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
               <tr>
                 <th className="py-3 pl-4 pr-2">Date / Time</th>
                 <th className="py-3 px-2">Customer</th>
+                <th className="py-3 px-2 text-emerald-800">
+                  <span className="inline-flex items-center gap-1">🔑 Access Code</span>
+                </th>
                 <th className="py-3 px-2">Product</th>
                 <th className="py-3 px-2">Gross Amount</th>
                 <th className="py-3 px-2 text-amber-800">
@@ -2273,16 +2303,17 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
             <tbody className="divide-y divide-slate-100">
               {loadingPayments ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
+                  <td colSpan={10} className="py-12 text-center text-slate-500">
                     Loading payments ledger…
                   </td>
                 </tr>
               ) : payments.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
+                  <td colSpan={10} className="py-12 text-center text-slate-500">
                     No transactions found matching your filters.
                   </td>
                 </tr>
+
               ) : (
                 payments.map((p) => {
                   const isPaid = p.status === "paid";
@@ -2324,11 +2355,40 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                           </p>
                         )}
                       </td>
+                      {/* Access / Reveal Code */}
+                      <td className="py-3 px-2">
+                        {p.revealCode ? (
+                          <div className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 border border-emerald-200/80 shadow-2xs">
+                            <span className="font-mono text-xs font-black text-emerald-900 tracking-wider">
+                              🔑 {p.revealCode}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void navigator.clipboard.writeText(p.revealCode || "");
+                                setActionMessage(`Copied access code ${p.revealCode}`);
+                                setTimeout(() => setActionMessage(""), 2000);
+                              }}
+                              className="text-[10px] font-bold text-emerald-700 hover:text-emerald-950 underline ml-0.5"
+                              title="Copy access code to clipboard"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        ) : isPaid ? (
+                          <span className="font-mono text-[11px] text-slate-400">Generating…</span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200/60">
+                            Pending Approval
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 px-2">
                         <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 border border-slate-200/60">
                           {productLabel(p.product)}
                         </span>
                       </td>
+
                       <td className="py-3 px-2 font-mono font-bold text-slate-900 whitespace-nowrap">
                         {currencySymbol}
                         {p.amount.toLocaleString("en-US", {

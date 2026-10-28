@@ -7,7 +7,8 @@ import {
   canAccessBoard,
   type SlipProductId,
 } from "../products.js";
-import { dayRange } from "../utils/dates.js";
+import { addDays, dayRange, endOfDay, startOfDay } from "../utils/dates.js";
+
 
 export const tipsRouter = Router();
 
@@ -105,9 +106,12 @@ tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
       const { from, to } = dayRange(-1);
       dateFilter = { kickoffAt: { $gte: from, $lte: to } };
     } else {
-      const { from, to } = dayRange(0);
+      const now = new Date();
+      const from = startOfDay(now);
+      const to = endOfDay(addDays(now, 1));
       dateFilter = { kickoffAt: { $gte: from, $lte: to } };
     }
+
 
     if (!boardAccess) {
       res.json({

@@ -2,7 +2,8 @@ import { SLIP_PRODUCT_IDS, isSlipProductId } from "../products.js";
 import { Payment } from "../models/Payment.js";
 import { Tip } from "../models/Tip.js";
 import { User } from "../models/User.js";
-import { dayRange } from "../utils/dates.js";
+import { addDays, dayRange, endOfDay, startOfDay } from "../utils/dates.js";
+
 import { generateUniqueRevealCode } from "./codes.js";
 import {
   buildOddsMessage,
@@ -34,12 +35,15 @@ export async function loadPaidTips(product: string): Promise<PaidSlipTip[]> {
     return results;
   }
 
-  const { from, to } = dayRange(0);
+  const now = new Date();
+  const from = startOfDay(now);
+  const to = endOfDay(addDays(now, 1));
   const filter: Record<string, unknown> = {
     product,
     kickoffAt: { $gte: from, $lte: to },
   };
   let tips = await Tip.find(filter).sort({ kickoffAt: 1, league: 1 });
+
 
   // Fallback: If no tips found for today's strict day window, fetch active pending tips or recent within 48h
   if (tips.length === 0) {

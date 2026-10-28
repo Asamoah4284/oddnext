@@ -42,34 +42,57 @@ type FetchOptions = RequestInit & {
   next?: { revalidate?: number };
 };
 
+export function pingLiveServer(): void {
+  if (typeof window === "undefined") return;
+  fetch(`${API_URL}/api/health`, { method: "GET" }).catch(() => {});
+}
+
 export async function apiFetch<T>(
   path: string,
   options: FetchOptions = {}
 ): Promise<T> {
   const { token, headers, next, ...rest } = options;
-  let res: Response;
-  try {
-    res = await fetch(`${API_URL}${path}`, {
-      ...rest,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...headers,
-      },
-      signal: rest.signal ?? AbortSignal.timeout(25000),
-      ...(next ? { next } : {}),
-    });
-  } catch (err) {
+  const timeoutMs = 50000;
+  let res: Response | undefined;
+  let lastErr: unknown;
+
+  // Try up to 2 times for cold-starts
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      res = await fetch(`${API_URL}${path}`, {
+        ...rest,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...headers,
+        },
+        signal: rest.signal ?? AbortSignal.timeout(timeoutMs),
+        ...(next ? { next } : {}),
+      });
+      break;
+    } catch (err) {
+      lastErr = err;
+      const aborted =
+        err instanceof DOMException &&
+        (err.name === "AbortError" || err.name === "TimeoutError");
+      if (aborted || attempt === 1) break;
+      // Wait 1.5s before retry (gives waking server time)
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+
+  if (!res) {
     const aborted =
-      err instanceof DOMException &&
-      (err.name === "AbortError" || err.name === "TimeoutError");
+      lastErr instanceof DOMException &&
+      (lastErr.name === "AbortError" || lastErr.name === "TimeoutError");
     throw new ApiError(
       0,
       aborted
-        ? "The payment server took too long. Try again."
-        : "Cannot reach the API. Check that the site is connected to the live server."
+        ? "The live server took too long to wake up. Please tap pay again in 10 seconds."
+        : "Cannot reach the live server. Please check your internet connection or try again shortly."
     );
   }
+
 
   const data = (await res.json().catch(() => ({}))) as {
     message?: string;
