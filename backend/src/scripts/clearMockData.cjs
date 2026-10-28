@@ -6,9 +6,11 @@ require('dotenv').config({ path: 'c:/Users/USER/Documents/projetcs/Betway/backen
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('Connected to MongoDB.');
 
-    // 1. Delete all payments
+    // 1. Delete all payments and payouts
     const paymentsResult = await mongoose.connection.collection('payments').deleteMany({});
     console.log(`Deleted ${paymentsResult.deletedCount} payments.`);
+    const payoutsResult = await mongoose.connection.collection('payouts').deleteMany({});
+    console.log(`Deleted ${payoutsResult.deletedCount} payouts.`);
 
     // 2. Delete non-admin test users (guest checkouts)
     const usersResult = await mongoose.connection.collection('users').deleteMany({ role: { $ne: 'admin' } });
@@ -16,6 +18,7 @@ require('dotenv').config({ path: 'c:/Users/USER/Documents/projetcs/Betway/backen
 
     // 3. Confirm remaining collections
     const remainingPayments = await mongoose.connection.collection('payments').countDocuments();
+    const remainingPayouts = await mongoose.connection.collection('payouts').countDocuments();
     const remainingUsers = await mongoose.connection.collection('users').countDocuments();
     const remainingAdmins = await mongoose.connection.collection('users').countDocuments({ role: 'admin' });
     const remainingPrices = await mongoose.connection.collection('boardprices').countDocuments();
@@ -24,6 +27,7 @@ require('dotenv').config({ path: 'c:/Users/USER/Documents/projetcs/Betway/backen
 
     console.log({
       remainingPayments,
+      remainingPayouts,
       remainingUsers,
       remainingAdmins,
       remainingPrices,
