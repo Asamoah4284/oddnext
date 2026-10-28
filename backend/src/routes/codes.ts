@@ -1,7 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
 import { Payment } from "../models/Payment.js";
-import { extractCorePhoneDigits, normalizeRevealCode } from "../services/codes.js";
+import {
+  extractCorePhoneDigits,
+  generateUniqueRevealCode,
+  normalizeRevealCode,
+} from "../services/codes.js";
+
 import { loadPaidTips } from "../services/vip.js";
 import { HttpError } from "../utils/httpError.js";
 
@@ -19,10 +24,15 @@ const lookupSchema = z.object({
 codesRouter.post("/reveal", async (req, res, next) => {
   try {
     const { code, deviceId } = revealSchema.parse(req.body);
+    const trimmed = code.trim().toUpperCase();
     const normalized = normalizeRevealCode(code);
 
     let payment = await Payment.findOne({
-      revealCode: normalized,
+      $or: [
+        { revealCode: normalized },
+        { revealCode: trimmed },
+        { externalRef: trimmed },
+      ],
       status: "paid",
     });
 
@@ -59,6 +69,12 @@ codesRouter.post("/reveal", async (req, res, next) => {
         "No active paid odds found for this phone number or reveal code. Please check your digits or search by phone."
       );
     }
+
+    if (!payment.revealCode) {
+      payment.revealCode = await generateUniqueRevealCode(payment.product || "odds10");
+      await payment.save();
+    }
+
 
     const now = new Date();
     const isVip = payment.codeType === "vip" || payment.product === "vip";
@@ -205,18 +221,30 @@ codesRouter.post("/lookup", async (req, res, next) => {
     const payments = await Payment.find({
       status: "paid",
       phone: regex,
-      revealCode: { $exists: true, $ne: "" },
     }).sort({ createdAt: -1 });
+
+    for (const p of payments) {
+      if (!p.revealCode) {
+        try {
+          p.revealCode = await generateUniqueRevealCode(p.product || "odds10");
+          await p.save();
+        } catch {
+          // ignore
+        }
+      }
+    }
 
     const now = new Date();
     const activeCodes = payments
       .filter((p) => {
+        if (!p.revealCode) return false;
         if (p.codeType === "vip" || p.product === "vip") {
           return !p.vipExpiresAt || p.vipExpiresAt > now;
         }
         return (p.unlockCount ?? 0) < (p.maxUnlocks || 2);
       })
       .map((p) => {
+
         const isVip = p.codeType === "vip" || p.product === "vip";
         const msLeft = p.vipExpiresAt ? p.vipExpiresAt.getTime() - now.getTime() : 0;
         const daysRemaining = isVip

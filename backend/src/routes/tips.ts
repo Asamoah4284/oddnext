@@ -48,7 +48,7 @@ function serializeTip(
 }
 
 import { Payment } from "../models/Payment.js";
-import { normalizeRevealCode } from "../services/codes.js";
+import { extractCorePhoneDigits, normalizeRevealCode } from "../services/codes.js";
 
 tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
   try {
@@ -64,11 +64,27 @@ tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
     let codeBoardAccess = false;
 
     if (revealCodeHeader) {
+      const trimmed = revealCodeHeader.trim().toUpperCase();
       const normalized = normalizeRevealCode(revealCodeHeader);
-      const payment = await Payment.findOne({
-        revealCode: normalized,
+      let payment = await Payment.findOne({
+        $or: [
+          { revealCode: normalized },
+          { revealCode: trimmed },
+          { externalRef: trimmed },
+        ],
         status: "paid",
       });
+
+      if (!payment) {
+        const coreDigits = extractCorePhoneDigits(revealCodeHeader);
+        if (coreDigits.length >= 7) {
+          payment = await Payment.findOne({
+            phone: new RegExp(`${coreDigits}$`),
+            status: "paid",
+          }).sort({ createdAt: -1 });
+        }
+      }
+
       if (payment) {
         const now = new Date();
         const isVip = payment.codeType === "vip" || payment.product === "vip";

@@ -101,6 +101,30 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
   const [foundPending, setFoundPending] = useState<LookupPendingItem[] | null>(null);
   const [copiedClusterCode, setCopiedClusterCode] = useState<string | null>(null);
 
+  // Listen for header "Reveal code" button click and ?reveal=1 query param
+  useEffect(() => {
+    const handleOpen = () => {
+      setShowLookupModal(true);
+      setLookupError(null);
+      const revealEl = document.getElementById("reveal-code");
+      if (revealEl) {
+        revealEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        const input = revealEl.querySelector("input");
+        if (input) input.focus();
+      }
+    };
+
+    window.addEventListener("oddnext:open-reveal-modal", handleOpen);
+
+    if (typeof window !== "undefined" && window.location.search.includes("reveal=1")) {
+      handleOpen();
+    }
+
+    return () => {
+      window.removeEventListener("oddnext:open-reveal-modal", handleOpen);
+    };
+  }, []);
+
   const handleReveal = async (codeToUse?: string) => {
     const target = (codeToUse || revealInput).trim();
     if (!target) {
@@ -137,20 +161,61 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
   };
 
   const handleLookup = async () => {
-    if (!lookupPhoneInput.trim()) {
-      setLookupError("Enter a phone number to check");
+    const input = lookupPhoneInput.trim();
+    if (!input) {
+      setLookupError("Enter your phone number or reveal code");
       return;
     }
     setLookupBusy(true);
     setLookupError(null);
     setFoundCodes(null);
     setFoundPending(null);
+
+    // If input contains letters or starts with typical code prefixes, reveal directly
+    const hasLetters = /[a-zA-Z]/.test(input);
+    if (hasLetters || input.toUpperCase().startsWith("VIP") || input.toUpperCase().startsWith("ODD")) {
+      try {
+        const res = await revealCode(input);
+        setRevealedSlip(res);
+        const codeKey = res.code || input;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("oddnext_reveal_code", codeKey);
+        }
+        setActiveCode(codeKey);
+        if (res.product && res.product !== "vip") {
+          setBoard(res.product as SlipProductId);
+        }
+        setShowLookupModal(false);
+        return;
+      } catch (err) {
+        setLookupError(err instanceof Error ? err.message : "Code not found");
+        setLookupBusy(false);
+        return;
+      }
+    }
+
     try {
-      const res = await lookupCodesByPhone(lookupPhoneInput);
+      const res = await lookupCodesByPhone(input);
       setFoundCodes(res.codes);
       setFoundPending(res.pending || null);
       if (res.codes.length === 0 && (!res.pending || res.pending.length === 0)) {
-        setLookupError("No active codes found for this phone number");
+        // Fallback: try direct reveal by phone number
+        try {
+          const direct = await revealCode(input);
+          if (direct && direct.tips && direct.tips.length > 0) {
+            setRevealedSlip(direct);
+            const codeKey = direct.code || input;
+            if (typeof window !== "undefined") {
+              localStorage.setItem("oddnext_reveal_code", codeKey);
+            }
+            setActiveCode(codeKey);
+            setShowLookupModal(false);
+            return;
+          }
+        } catch {
+          // ignore fallback error
+        }
+        setLookupError("No active paid odds found for this phone number or code");
       }
     } catch (err) {
       setLookupError(err instanceof Error ? err.message : "Lookup failed");
@@ -528,10 +593,10 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-fire">
-                  Retrieve Your Code
+                  Instant Unlock
                 </p>
                 <h3 className="mt-1 font-sans text-xl font-extrabold text-cream">
-                  Check by Phone Number
+                  Reveal Odds or Check Code
                 </h3>
               </div>
               <button
@@ -544,12 +609,12 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
             </div>
 
             <p className="mt-2 text-xs leading-relaxed text-mute">
-              Enter the Mobile Money phone number you used when paying. Any active single or VIP codes will be listed below.
+              Enter your Reveal Code (e.g. <span className="font-mono text-star font-bold">VIP-12345</span>) or the phone number you paid with to see your predictions.
             </p>
 
             <div className="mt-4 flex gap-2">
               <input
-                type="tel"
+                type="text"
                 value={lookupPhoneInput}
                 onChange={(e) => {
                   setLookupPhoneInput(e.target.value);
@@ -560,7 +625,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                     void handleLookup();
                   }
                 }}
-                placeholder="e.g. 0244123456"
+                placeholder="e.g. VIP-12345 or 07082511762"
                 className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-cream focus:border-fire focus:outline-none"
               />
               <button
@@ -569,7 +634,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                 disabled={lookupBusy || !lookupPhoneInput.trim()}
                 className="btn-primary whitespace-nowrap px-4 py-2 text-xs"
               >
-                {lookupBusy ? "Searching…" : "Search"}
+                {lookupBusy ? "Checking…" : "Unlock / Check"}
               </button>
             </div>
 

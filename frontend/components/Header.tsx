@@ -14,6 +14,22 @@ export function Header({
 }) {
   const [open, setOpen] = useState(false);
 
+  const handleOpenReveal = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("oddnext:open-reveal-modal"));
+      if (window.location.pathname !== "/") {
+        window.location.href = "/?reveal=1";
+      } else {
+        const el = document.getElementById("reveal-input") || document.getElementById("reveal-code");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (el instanceof HTMLInputElement) el.focus();
+        }
+      }
+    }
+  };
+
   return (
     <header
       className={
@@ -41,24 +57,26 @@ export function Header({
           <a href="#vip" className="transition hover:text-ink">
             VIP
           </a>
-          <a
-            href="#reveal-code"
-            className="rounded-full border border-line bg-surface/80 px-3.5 py-1.5 text-xs font-semibold text-cream transition hover:border-fire/50 hover:bg-surface"
+          <button
+            type="button"
+            onClick={handleOpenReveal}
+            className="rounded-full border border-line bg-surface/80 px-3.5 py-1.5 text-xs font-semibold text-cream transition hover:border-fire/50 hover:bg-surface active:scale-95 cursor-pointer"
           >
             🔑 Reveal code
-          </a>
+          </button>
           <Link href="/profile" className="btn-primary">
             Get VIP
           </Link>
         </nav>
 
         <div className="flex items-center gap-2 md:hidden">
-          <a
-            href="#reveal-code"
-            className="rounded-full border border-line bg-surface px-2.5 py-1.5 text-[11px] font-semibold text-cream"
+          <button
+            type="button"
+            onClick={handleOpenReveal}
+            className="rounded-full border border-line bg-surface px-2.5 py-1.5 text-[11px] font-semibold text-cream active:scale-95 cursor-pointer"
           >
             🔑 Code
-          </a>
+          </button>
           <Link href="/profile" className="btn-primary px-3 py-1.5 text-xs">
             VIP
           </Link>
@@ -83,18 +101,22 @@ export function Header({
           <a href="#vip" onClick={() => setOpen(false)} className="block font-medium">
             VIP Subscription
           </a>
-          <a
-            href="#reveal-code"
-            onClick={() => setOpen(false)}
-            className="block font-semibold text-fire"
+          <button
+            type="button"
+            onClick={(e) => {
+              setOpen(false);
+              handleOpenReveal(e);
+            }}
+            className="block w-full text-left font-semibold text-fire cursor-pointer"
           >
             🔑 Enter Reveal Code
-          </a>
+          </button>
           <Link href="/profile" className="btn-primary mt-2 inline-flex w-full">
             Get VIP Access
           </Link>
         </div>
       )}
+
     </header>
   );
 }
