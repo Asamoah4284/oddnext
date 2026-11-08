@@ -8,7 +8,7 @@ Sports betting predictions platform for Ghana and Nigeria: priced odds boards, V
 - **Backend:** Express + Mongoose on Render
 - **Database:** MongoDB Atlas
 - **Payments:** Moolre hosted payment link + webhook + server-side verify
-
+- **VIPS**
 
 ## Local setup
 
