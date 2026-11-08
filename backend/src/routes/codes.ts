@@ -7,7 +7,11 @@ import {
   normalizeRevealCode,
 } from "../services/codes.js";
 
-import { loadPaidTips } from "../services/vip.js";
+import {
+  isSlipExpired,
+  paymentPaidAt,
+  tipsForPayment,
+} from "../services/vip.js";
 import { HttpError } from "../utils/httpError.js";
 
 export const codesRouter = Router();
@@ -136,7 +140,7 @@ codesRouter.post("/reveal", async (req, res, next) => {
         await payment.save();
       }
 
-      const tips = await loadPaidTips("vip");
+      const tips = await tipsForPayment(payment);
       const sessionLeft = payment.activeSessionExpiresAt
         ? payment.activeSessionExpiresAt.getTime() - now.getTime()
         : 0;
@@ -161,7 +165,14 @@ codesRouter.post("/reveal", async (req, res, next) => {
       return;
     }
 
-    // Single Slip Logic
+    // Single Slip Logic: a slip code only covers the slip on sale the day it was paid.
+    if (isSlipExpired(paymentPaidAt(payment), now)) {
+      throw new HttpError(
+        403,
+        "This code was for an earlier slip and has expired. Buy today's slip to see the new odds."
+      );
+    }
+
     const isGracePeriod = Boolean(
       payment.activeSessionExpiresAt &&
         payment.activeSessionExpiresAt > now &&
@@ -186,7 +197,7 @@ codesRouter.post("/reveal", async (req, res, next) => {
       await payment.save();
     }
 
-    const tips = await loadPaidTips(payment.product || "odds10");
+    const tips = await tipsForPayment(payment);
     const msLeft = payment.activeSessionExpiresAt
       ? payment.activeSessionExpiresAt.getTime() - now.getTime()
       : 0;
@@ -241,6 +252,7 @@ codesRouter.post("/lookup", async (req, res, next) => {
         if (p.codeType === "vip" || p.product === "vip") {
           return !p.vipExpiresAt || p.vipExpiresAt > now;
         }
+        if (isSlipExpired(paymentPaidAt(p), now)) return false;
         return (p.unlockCount ?? 0) < (p.maxUnlocks || 2);
       })
       .map((p) => {

@@ -107,7 +107,7 @@ export function canAccessBoard(
   board?: SlipProductId
 ): boolean {
   if (!user) return false;
-  if (user.vipActive || user.isVip) return true;
+  if (user.vipActive) return true;
   if (board && Array.isArray(user.entitlements) && user.entitlements.includes(board)) {
     return true;
   }

@@ -2,7 +2,7 @@ import { SLIP_PRODUCT_IDS, isSlipProductId } from "../products.js";
 import { Payment } from "../models/Payment.js";
 import { Tip } from "../models/Tip.js";
 import { User } from "../models/User.js";
-import { addDays, dayRange, endOfDay, startOfDay } from "../utils/dates.js";
+import { addDays, endOfDay, startOfDay } from "../utils/dates.js";
 
 import { generateUniqueRevealCode } from "./codes.js";
 import {
@@ -24,45 +24,20 @@ export type PaidSlipTip = {
   product: string;
 };
 
-export async function loadPaidTips(product: string): Promise<PaidSlipTip[]> {
-  if (product === "vip") {
-    // For VIP, fetch active games across each board so user gets full access
-    const results: PaidSlipTip[] = [];
-    for (const board of SLIP_PRODUCT_IDS) {
-      const boardTips = await loadPaidTips(board);
-      results.push(...boardTips);
-    }
-    return results;
-  }
+type TipLike = {
+  _id: { toString(): string };
+  kickoffAt: Date;
+  league: string;
+  homeTeam: string;
+  awayTeam: string;
+  prediction: string;
+  odds: number;
+  bookingCode?: string | null;
+  product?: string | null;
+};
 
-  const now = new Date();
-  const from = startOfDay(now);
-  const to = endOfDay(addDays(now, 1));
-  const filter: Record<string, unknown> = {
-    product,
-    kickoffAt: { $gte: from, $lte: to },
-  };
-  let tips = await Tip.find(filter).sort({ kickoffAt: 1, league: 1 });
-
-
-  // Fallback: If no tips found for today's strict day window, fetch active pending tips or recent within 48h
-  if (tips.length === 0) {
-    const fallbackFilter: Record<string, unknown> = {
-      product,
-      $or: [
-        { status: "pending" },
-        { kickoffAt: { $gte: new Date(Date.now() - 48 * 60 * 60 * 1000) } },
-      ],
-    };
-    tips = await Tip.find(fallbackFilter).sort({ kickoffAt: 1, league: 1 }).limit(100);
-
-    // If still 0, grab the most recent tips in the system
-    if (tips.length === 0) {
-      tips = await Tip.find({ product }).sort({ kickoffAt: -1, league: 1 }).limit(100);
-    }
-  }
-
-  return tips.map((tip) => ({
+function toPaidTip(tip: TipLike, product: string): PaidSlipTip {
+  return {
     id: tip._id.toString(),
     kickoffAt: tip.kickoffAt,
     league: tip.league,
@@ -72,7 +47,82 @@ export async function loadPaidTips(product: string): Promise<PaidSlipTip[]> {
     odds: tip.odds,
     bookingCode: tip.bookingCode || "",
     product: tip.product || product,
-  }));
+  };
+}
+
+/**
+ * A single-slip purchase covers the slip that was on sale on the day it was
+ * paid: tips for that board posted by the end of the purchase day, kicking off
+ * from the purchase day through the following day. Nothing posted later.
+ */
+export function slipWindow(paidAt: Date): { from: Date; to: Date; postedBy: Date } {
+  return {
+    from: startOfDay(paidAt),
+    to: endOfDay(addDays(paidAt, 1)),
+    postedBy: endOfDay(paidAt),
+  };
+}
+
+export function isSlipExpired(paidAt: Date, now = new Date()): boolean {
+  return slipWindow(paidAt).to.getTime() < now.getTime();
+}
+
+export function paymentPaidAt(payment: {
+  paidAt?: Date | null;
+  createdAt?: Date | null;
+}): Date {
+  return payment.paidAt ?? payment.createdAt ?? new Date();
+}
+
+export async function findSlipTipDocs(product: string, paidAt: Date) {
+  const { from, to, postedBy } = slipWindow(paidAt);
+  return Tip.find({
+    product,
+    kickoffAt: { $gte: from, $lte: to },
+    createdAt: { $lte: postedBy },
+  }).sort({ kickoffAt: 1, league: 1 });
+}
+
+/**
+ * Tips a paid customer is entitled to see.
+ * - Single slip: the slip on sale on the day it was paid (see slipWindow).
+ * - VIP: today's and tomorrow's games on every board.
+ */
+export async function loadPaidTips(
+  product: string,
+  paidAt: Date = new Date()
+): Promise<PaidSlipTip[]> {
+  if (product === "vip") {
+    const now = new Date();
+    const tips = await Tip.find({
+      product: { $in: SLIP_PRODUCT_IDS },
+      kickoffAt: { $gte: startOfDay(now), $lte: endOfDay(addDays(now, 1)) },
+    }).sort({ product: 1, kickoffAt: 1, league: 1 });
+    return tips.map((tip) => toPaidTip(tip, tip.product || "odds10"));
+  }
+
+  if (!isSlipProductId(product)) return [];
+  const tips = await findSlipTipDocs(product, paidAt);
+  return tips.map((tip) => toPaidTip(tip, product));
+}
+
+/** Tips for a specific payment, or [] once its access has lapsed. */
+export async function tipsForPayment(payment: {
+  product?: string | null;
+  paidAt?: Date | null;
+  createdAt?: Date | null;
+  vipExpiresAt?: Date | null;
+}): Promise<PaidSlipTip[]> {
+  const product = payment.product || "odds10";
+  if (product === "vip") {
+    if (payment.vipExpiresAt && payment.vipExpiresAt.getTime() < Date.now()) {
+      return [];
+    }
+    return loadPaidTips("vip");
+  }
+  const paidAt = paymentPaidAt(payment);
+  if (isSlipExpired(paidAt)) return [];
+  return loadPaidTips(product, paidAt);
 }
 
 async function deliverOddsSms(
@@ -165,8 +215,11 @@ export async function fulfillVipPayment(
   }
 
   if (payment.status === "paid") {
+    if (!payment.paidAt) {
+      payment.paidAt = payment.createdAt ?? new Date();
+    }
     if (!payment.smsSent) {
-      const tips = await loadPaidTips(product);
+      const tips = await tipsForPayment(payment);
       const sent = await deliverOddsSms(phone, product, tips, payment.revealCode || undefined);
       if (sent) {
         payment.smsSent = true;
@@ -184,6 +237,7 @@ export async function fulfillVipPayment(
   }
 
   payment.status = "paid";
+  payment.paidAt = new Date();
   if (extras?.moolreTxId) payment.moolreTxId = extras.moolreTxId;
   if (extras?.rawCallback) payment.rawCallback = extras.rawCallback;
   await payment.save();
@@ -196,7 +250,7 @@ export async function fulfillVipPayment(
     await user.save();
   }
 
-  const tips = await loadPaidTips(product);
+  const tips = await tipsForPayment(payment);
   const smsSent = await deliverOddsSms(phone, product, tips, payment.revealCode || undefined);
   if (smsSent) {
     payment.smsSent = true;

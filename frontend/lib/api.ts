@@ -149,6 +149,16 @@ export async function fetchProducts(): Promise<ProductItem[]> {
   }
 }
 
+// Same key as lib/deviceId.ts (kept local because this module also runs on the server).
+function readDeviceId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem("oddnext_device_id") ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export const REVEAL_CODE_KEY = "oddnext_reveal_code";
 
 export async function fetchTips(
@@ -166,6 +176,9 @@ export async function fetchTips(
   const headers: Record<string, string> = {};
   if (activeCode) {
     headers["x-reveal-code"] = activeCode;
+    // The backend only honours a stored code on the device that revealed it.
+    const deviceId = readDeviceId();
+    if (deviceId) headers["x-device-id"] = deviceId;
   }
 
   return apiFetch<TipsResponse>(`/api/tips?tab=${tab}&board=${board}`, {

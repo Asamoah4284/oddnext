@@ -32,6 +32,7 @@ const paymentSchema = new Schema(
     activeSessionDeviceId: { type: String, default: "" },
     activeSessionExpiresAt: { type: Date, default: null },
     lastUnlockedAt: { type: Date, default: null },
+    paidAt: { type: Date, default: null },
     dailyUnlockDate: { type: String, default: "" }, // Format: YYYY-MM-DD
     dailyUnlockCount: { type: Number, default: 0 },
     maxDailyUnlocks: { type: Number, default: 3 },

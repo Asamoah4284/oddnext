@@ -38,7 +38,7 @@ import {
   formatPhoneForMoolre,
   looksLikePayPhone,
 } from "../services/sms.js";
-import { fulfillVipPayment, loadPaidTips } from "../services/vip.js";
+import { fulfillVipPayment, tipsForPayment } from "../services/vip.js";
 import { HttpError } from "../utils/httpError.js";
 
 export const paymentsRouter = Router();
@@ -154,6 +154,7 @@ async function paymentSnapshot(
     provider?: string;
     createdAt?: Date;
     revealCode?: string | null;
+    paidAt?: Date | null;
     codeType?: string | null;
     unlockCount?: number | null;
     maxUnlocks?: number | null;
@@ -178,7 +179,9 @@ async function paymentSnapshot(
       maxUnlocks: payment.maxUnlocks ?? 2,
       vipExpiresAt: payment.vipExpiresAt,
       createdAt: payment.createdAt,
-      tips: await loadPaidTips(payment.product || "vip"),
+      // The slip is shown once right after payment; after that it lives on
+      // SMS and behind the reveal code (which enforces unlock limits).
+      tips: viewed ? [] : await tipsForPayment(payment),
     };
   }
 
@@ -219,7 +222,9 @@ async function paymentSnapshot(
         phone: verified.phone,
         rawStatus: verified.raw,
       });
-      const tips = await loadPaidTips(fulfilled.product);
+      const tips = await tipsForPayment(
+        (await Payment.findOne({ externalRef: payment.externalRef })) ?? payment
+      );
       return {
         status: "paid" as const,
         reference: payment.externalRef,
@@ -266,7 +271,9 @@ async function paymentSnapshot(
       phone: verified.phone,
       rawStatus: verified.raw,
     });
-    const tips = await loadPaidTips(fulfilled.product);
+    const tips = await tipsForPayment(
+      (await Payment.findOne({ externalRef: payment.externalRef })) ?? payment
+    );
     return {
       status: "paid" as const,
       reference: payment.externalRef,
@@ -749,7 +756,9 @@ paymentsRouter.post(
         moolreTxId: "simulated",
         rawCallback: { simulated: true },
       });
-      const tips = await loadPaidTips(result.product);
+      const tips = await tipsForPayment(
+        (await Payment.findOne({ externalRef: reference })) ?? payment
+      );
       res.json({ status: "paid", reference, tips, ...result });
 
     } catch (err) {

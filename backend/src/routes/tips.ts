@@ -1,54 +1,90 @@
 import { Router } from "express";
 import { z } from "zod";
 import { optionalAuth, type AuthedRequest } from "../middleware/auth.js";
+import { Payment } from "../models/Payment.js";
 import { Tip } from "../models/Tip.js";
 import {
   SLIP_PRODUCT_IDS,
   canAccessBoard,
   type SlipProductId,
 } from "../products.js";
+import { normalizeRevealCode } from "../services/codes.js";
+import {
+  findSlipTipDocs,
+  isSlipExpired,
+  paymentPaidAt,
+} from "../services/vip.js";
 import { addDays, dayRange, endOfDay, startOfDay } from "../utils/dates.js";
-
 
 export const tipsRouter = Router();
 
 const tabSchema = z.enum(["yesterday", "today"]).default("today");
 const boardSchema = z.enum(SLIP_PRODUCT_IDS).default("odds10");
 
-function serializeTip(
-  tip: {
-    _id: { toString(): string };
-    kickoffAt: Date;
-    league: string;
-    homeTeam: string;
-    awayTeam: string;
-    prediction: string;
-    odds: number;
-    status: string;
-    product?: string;
-    isVip: boolean;
-    bookingCode?: string;
-  },
-  unlocked: boolean
-) {
+function serializeTip(tip: {
+  _id: { toString(): string };
+  kickoffAt: Date;
+  league: string;
+  homeTeam: string;
+  awayTeam: string;
+  prediction: string;
+  odds: number;
+  status: string;
+  product?: string | null;
+  isVip: boolean;
+  bookingCode?: string | null;
+}) {
   return {
     id: tip._id.toString(),
     kickoffAt: tip.kickoffAt,
     league: tip.league,
     homeTeam: tip.homeTeam,
     awayTeam: tip.awayTeam,
-    prediction: unlocked ? tip.prediction : "Locked",
-    odds: unlocked ? tip.odds : null,
+    prediction: tip.prediction,
+    odds: tip.odds,
     status: tip.status,
     product: tip.product || "odds10",
     isVip: tip.isVip,
-    locked: !unlocked,
-    bookingCode: unlocked ? tip.bookingCode || "" : "",
+    locked: false,
+    bookingCode: tip.bookingCode || "",
   };
 }
 
-import { Payment } from "../models/Payment.js";
-import { extractCorePhoneDigits, normalizeRevealCode } from "../services/codes.js";
+/**
+ * A stored reveal code only grants access while the 30-minute session opened
+ * by POST /api/codes/reveal is still live, on the same device that opened it.
+ * Every new viewing has to go through /reveal, which enforces unlock limits.
+ */
+async function findActiveCodePayment(rawCode: string, deviceId: string) {
+  const trimmed = rawCode.trim().toUpperCase();
+  const normalized = normalizeRevealCode(rawCode);
+  if (!normalized && !trimmed) return null;
+
+  const payment = await Payment.findOne({
+    revealCode: { $in: [...new Set([normalized, trimmed].filter(Boolean))] },
+    status: "paid",
+  });
+  if (!payment) return null;
+
+  const now = new Date();
+  const sessionLive = Boolean(
+    payment.activeSessionExpiresAt && payment.activeSessionExpiresAt > now
+  );
+  const sameDevice = Boolean(
+    deviceId &&
+      payment.activeSessionDeviceId &&
+      payment.activeSessionDeviceId === deviceId
+  );
+  if (!sessionLive || !sameDevice) return null;
+
+  const isVip = payment.codeType === "vip" || payment.product === "vip";
+  if (isVip) {
+    if (payment.vipExpiresAt && payment.vipExpiresAt < now) return null;
+  } else if (isSlipExpired(paymentPaidAt(payment), now)) {
+    return null;
+  }
+  return { payment, isVip };
+}
 
 tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
   try {
@@ -56,114 +92,70 @@ tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
     const board = boardSchema.parse(req.query.board ?? "odds10") as SlipProductId;
     res.setHeader("Cache-Control", "private, no-store");
 
-    const revealCodeHeader =
-      (req.headers["x-reveal-code"] as string) ||
-      (req.query.code as string);
+    const revealCodeHeader = String(req.headers["x-reveal-code"] ?? "");
+    const deviceId = String(req.headers["x-device-id"] ?? "");
+    const codeAccess = revealCodeHeader
+      ? await findActiveCodePayment(revealCodeHeader, deviceId)
+      : null;
 
-    let codeVipAccess = false;
-    let codeBoardAccess = false;
-
-    if (revealCodeHeader) {
-      const trimmed = revealCodeHeader.trim().toUpperCase();
-      const normalized = normalizeRevealCode(revealCodeHeader);
-      let payment = await Payment.findOne({
-        $or: [
-          { revealCode: normalized },
-          { revealCode: trimmed },
-          { externalRef: trimmed },
-        ],
-        status: "paid",
-      });
-
-      if (!payment) {
-        const coreDigits = extractCorePhoneDigits(revealCodeHeader);
-        if (coreDigits.length >= 7) {
-          payment = await Payment.findOne({
-            phone: new RegExp(`${coreDigits}$`),
-            status: "paid",
-          }).sort({ createdAt: -1 });
-        }
-      }
-
-      if (payment) {
-        const now = new Date();
-        const isVip = payment.codeType === "vip" || payment.product === "vip";
-        if (isVip && (!payment.vipExpiresAt || payment.vipExpiresAt > now)) {
-          const todayKey = now.toISOString().split("T")[0];
-          const isToday = payment.dailyUnlockDate === todayKey;
-          const dailyCount = isToday ? (payment.dailyUnlockCount ?? 0) : 0;
-          const maxDaily = payment.maxDailyUnlocks || 3;
-          const inActiveSession = Boolean(
-            payment.activeSessionExpiresAt && payment.activeSessionExpiresAt > now
-          );
-          // Grant access if within daily limit or within active session window
-          if (dailyCount < maxDaily || inActiveSession) {
-            codeVipAccess = true;
-            codeBoardAccess = true;
-          }
-        } else if (payment.product === board) {
-          const max = payment.maxUnlocks || 2;
-          const isGrace = Boolean(
-            payment.activeSessionExpiresAt &&
-              payment.activeSessionExpiresAt > now
-          );
-          if ((payment.unlockCount ?? 0) <= max || isGrace) {
-            codeBoardAccess = true;
-          }
-        }
-      }
-    }
+    const userAccess = canAccessBoard(req.user, board);
+    const codeVipAccess = Boolean(codeAccess?.isVip);
+    const codeSlipPayment =
+      codeAccess && !codeAccess.isVip && codeAccess.payment.product === board
+        ? codeAccess.payment
+        : null;
 
     const vipAccess = Boolean(req.user?.vipActive) || codeVipAccess;
-    const boardAccess = canAccessBoard(req.user, board) || codeBoardAccess;
+    const fullBoardAccess = userAccess || codeVipAccess;
+    const boardAccess = fullBoardAccess || Boolean(codeSlipPayment);
 
-    let dateFilter: Record<string, unknown> = {};
+    const locked = {
+      tab,
+      board,
+      vipAccess,
+      boardAccess: false,
+      entitlements: req.user?.entitlements ?? [],
+      tips: [],
+    };
+
+    if (!boardAccess) {
+      res.json(locked);
+      return;
+    }
+
+    // Single-slip code: only the slip that was purchased, never other days.
+    if (!fullBoardAccess && codeSlipPayment) {
+      if (tab !== "today") {
+        res.json(locked);
+        return;
+      }
+      const tips = await findSlipTipDocs(board, paymentPaidAt(codeSlipPayment));
+      res.json({
+        tab,
+        board,
+        vipAccess,
+        boardAccess: true,
+        entitlements: req.user?.entitlements ?? [],
+        tips: tips.map(serializeTip),
+      });
+      return;
+    }
+
+    let dateFilter: Record<string, unknown>;
     if (tab === "yesterday") {
       const { from, to } = dayRange(-1);
       dateFilter = { kickoffAt: { $gte: from, $lte: to } };
     } else {
       const now = new Date();
-      const from = startOfDay(now);
-      const to = endOfDay(addDays(now, 1));
-      dateFilter = { kickoffAt: { $gte: from, $lte: to } };
+      dateFilter = {
+        kickoffAt: { $gte: startOfDay(now), $lte: endOfDay(addDays(now, 1)) },
+      };
     }
 
-
-    if (!boardAccess) {
-      res.json({
-        tab,
-        board,
-        vipAccess,
-        boardAccess: false,
-        entitlements: req.user?.entitlements ?? [],
-        tips: [],
-      });
-      return;
-    }
-
-    let tips = await Tip.find({
-      ...dateFilter,
-      product: board,
-    }).sort({ kickoffAt: 1, league: 1 });
-
-    // Fallback: If today has no tips for this board, load pending or recent active tips
-    if (tab === "today" && tips.length === 0) {
-      tips = await Tip.find({
-        product: board,
-        $or: [
-          { status: "pending" },
-          { kickoffAt: { $gte: new Date(Date.now() - 48 * 60 * 60 * 1000) } },
-        ],
-      })
-        .sort({ kickoffAt: 1, league: 1 })
-        .limit(100);
-
-      if (tips.length === 0) {
-        tips = await Tip.find({ product: board })
-          .sort({ kickoffAt: -1, league: 1 })
-          .limit(100);
-      }
-    }
+    const tips = await Tip.find({ ...dateFilter, product: board }).sort({
+      kickoffAt: 1,
+      league: 1,
+    });
 
     res.json({
       tab,
@@ -171,7 +163,7 @@ tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
       vipAccess,
       boardAccess: true,
       entitlements: req.user?.entitlements ?? [],
-      tips: tips.map((tip) => serializeTip(tip, true)),
+      tips: tips.map(serializeTip),
     });
   } catch (err) {
     next(err);
