@@ -4,7 +4,7 @@ import { Tip } from "../models/Tip.js";
 import { User } from "../models/User.js";
 import { addDays, dayRange, endOfDay, startOfDay } from "../utils/dates.js";
 
-import { generateUniqueRevealCode } from "./codes.js";
+import { SINGLE_CODE_TTL_MS, generateUniqueRevealCode } from "./codes.js";
 import {
   buildOddsMessage,
   extractPayerPhone,
@@ -162,6 +162,9 @@ export async function fulfillVipPayment(
   } else {
     payment.codeType = "single";
     payment.maxUnlocks = 2;
+    if (!payment.codeExpiresAt) {
+      payment.codeExpiresAt = new Date(Date.now() + SINGLE_CODE_TTL_MS);
+    }
   }
 
   if (payment.status === "paid") {

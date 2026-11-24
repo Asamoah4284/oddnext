@@ -48,7 +48,7 @@ function serializeTip(
 }
 
 import { Payment } from "../models/Payment.js";
-import { extractCorePhoneDigits, normalizeRevealCode } from "../services/codes.js";
+import { codeExpiry } from "../services/codes.js";
 
 tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
   try {
@@ -56,58 +56,39 @@ tipsRouter.get("/", optionalAuth, async (req: AuthedRequest, res, next) => {
     const board = boardSchema.parse(req.query.board ?? "odds10") as SlipProductId;
     res.setHeader("Cache-Control", "private, no-store");
 
-    const revealCodeHeader =
-      (req.headers["x-reveal-code"] as string) ||
-      (req.query.code as string);
+    // Opaque token from POST /api/codes/reveal — the unlock code itself never travels here.
+    const rawToken = req.headers["x-unlock-session"];
+    const sessionTokenHeader = typeof rawToken === "string" ? rawToken.trim() : "";
 
     let codeVipAccess = false;
     let codeBoardAccess = false;
 
-    if (revealCodeHeader) {
-      const trimmed = revealCodeHeader.trim().toUpperCase();
-      const normalized = normalizeRevealCode(revealCodeHeader);
-      let payment = await Payment.findOne({
-        $or: [
-          { revealCode: normalized },
-          { revealCode: trimmed },
-          { externalRef: trimmed },
-        ],
+    // A session token only unlocks the board during the 30-minute session that
+    // POST /api/codes/reveal opened (which is what counts against the unlock
+    // limits), on the same device, and only while the code hasn't expired.
+    if (sessionTokenHeader) {
+      const deviceId = String(req.headers["x-device-id"] || "").trim();
+      const payment = await Payment.findOne({
+        activeSessionToken: sessionTokenHeader,
         status: "paid",
       });
-
-      if (!payment) {
-        const coreDigits = extractCorePhoneDigits(revealCodeHeader);
-        if (coreDigits.length >= 7) {
-          payment = await Payment.findOne({
-            phone: new RegExp(`${coreDigits}$`),
-            status: "paid",
-          }).sort({ createdAt: -1 });
-        }
-      }
 
       if (payment) {
         const now = new Date();
         const isVip = payment.codeType === "vip" || payment.product === "vip";
-        if (isVip && (!payment.vipExpiresAt || payment.vipExpiresAt > now)) {
-          const todayKey = now.toISOString().split("T")[0];
-          const isToday = payment.dailyUnlockDate === todayKey;
-          const dailyCount = isToday ? (payment.dailyUnlockCount ?? 0) : 0;
-          const maxDaily = payment.maxDailyUnlocks || 3;
-          const inActiveSession = Boolean(
-            payment.activeSessionExpiresAt && payment.activeSessionExpiresAt > now
-          );
-          // Grant access if within daily limit or within active session window
-          if (dailyCount < maxDaily || inActiveSession) {
+        const notExpired = codeExpiry(payment) > now;
+        const inActiveSession = Boolean(
+          payment.activeSessionExpiresAt &&
+            payment.activeSessionExpiresAt > now &&
+            deviceId &&
+            payment.activeSessionDeviceId === deviceId
+        );
+
+        if (notExpired && inActiveSession) {
+          if (isVip) {
             codeVipAccess = true;
             codeBoardAccess = true;
-          }
-        } else if (payment.product === board) {
-          const max = payment.maxUnlocks || 2;
-          const isGrace = Boolean(
-            payment.activeSessionExpiresAt &&
-              payment.activeSessionExpiresAt > now
-          );
-          if ((payment.unlockCount ?? 0) <= max || isGrace) {
+          } else if (payment.product === board) {
             codeBoardAccess = true;
           }
         }

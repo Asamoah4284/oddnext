@@ -35,6 +35,8 @@ function PaymentReturnInner() {
     product?: string;
     smsSent?: boolean;
     revealCode?: string;
+    codeDelivery?: "sms" | "screen";
+    maskedPhone?: string;
     codeType?: string;
     remainingUnlocks?: number | null;
     daysRemaining?: number | null;
@@ -67,6 +69,7 @@ function PaymentReturnInner() {
 
     let cancelled = false;
     const settled = { current: false };
+    const paidCodeRef: { current: string | undefined } = { current: undefined };
 
     async function confirm(poll = false) {
       if (settled.current) return true;
@@ -87,10 +90,6 @@ function PaymentReturnInner() {
         if (result.status === "paid") {
           settled.current = true;
           clearPayRef();
-          if (result.revealCode && typeof window !== "undefined") {
-            localStorage.setItem("oddnext_reveal_code", result.revealCode);
-          }
-
 
           const isVip = result.product === "vip" || result.codeType === "vip";
           let daysLeft: number | null = null;
@@ -110,17 +109,25 @@ function PaymentReturnInner() {
             tips: result.tips ?? [],
             product: result.product,
             smsSent: result.smsSent,
-            revealCode: result.revealCode,
+            // Keep a Nigerian one-time code in state: later polls won't return it again
+            revealCode: result.revealCode ?? paidCodeRef.current,
+            codeDelivery: result.codeDelivery,
+            maskedPhone: result.maskedPhone,
             codeType: isVip ? "vip" : "single",
             remainingUnlocks,
             daysRemaining: daysLeft,
             vipExpiresAt: result.vipExpiresAt,
           });
 
+          if (result.revealCode) paidCodeRef.current = result.revealCode;
+          const onScreen = result.codeDelivery === "screen";
+          const where = onScreen
+            ? "Save your unlock code below — it is shown only once."
+            : `Your unlock code has been sent by SMS to ${result.maskedPhone || "the phone you paid with"}.`;
           setMessage(
             isVip
-              ? "Your 7-day VIP access is active on up to 2 devices. Save your code below!"
-              : "Payment confirmed. You can use your reveal code twice to check this slip on any device."
+              ? `Your 7-day VIP access is active on up to 2 devices. ${where}`
+              : `Payment confirmed. ${where} Use it to view this slip again (2 uses).`
           );
 
           await refresh();
@@ -175,7 +182,7 @@ function PaymentReturnInner() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-fire">
-                Your Unique Reveal Code
+                Your Unlock Code · shown once
               </p>
               <p className="mt-1 font-mono text-3xl font-black tracking-widest text-cream">
                 {paid.revealCode}
@@ -197,11 +204,12 @@ function PaymentReturnInner() {
             {paid.codeType === "vip" ? (
               <p>
                 👑 <strong>VIP 7-Day Access:</strong> Usable on up to 2 devices for 7 days.
-                You can also retrieve your code anytime on the home screen using your phone number.
+                Write this code down now — SMS isn&apos;t available for Nigerian numbers, and it won&apos;t be shown again.
               </p>
             ) : (
               <p>
-                🔒 <strong>Single Board Code:</strong> Can be used <strong>2 times total</strong> to reveal these odds on any device (refreshes within 30 min are free). You can also look up your code anytime with your phone number on the home page.
+                🔒 <strong>Single Board Code:</strong> Can be used <strong>2 times total</strong> within 48 hours (refreshes within 30 min are free).
+                Write this code down now — SMS isn&apos;t available for Nigerian numbers, and it won&apos;t be shown again.
               </p>
             )}
           </div>
@@ -214,7 +222,6 @@ function PaymentReturnInner() {
             tips={paid.tips}
             product={paid.product}
             smsSent={paid.smsSent}
-            revealCode={paid.revealCode}
             remainingUnlocks={paid.remainingUnlocks}
             daysRemaining={paid.daysRemaining}
           />

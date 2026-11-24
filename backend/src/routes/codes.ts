@@ -1,16 +1,28 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { Payment } from "../models/Payment.js";
+import { getProduct, loadProductPrices } from "../products.js";
 import {
+  codeExpiry,
   extractCorePhoneDigits,
   generateUniqueRevealCode,
+  isNigerianPayment,
+  maskPhone,
   normalizeRevealCode,
+  takeDisplayableCode,
 } from "../services/codes.js";
-
+import { sendMoolreSms } from "../services/sms.js";
 import { loadPaidTips } from "../services/vip.js";
 import { HttpError } from "../utils/httpError.js";
 
 export const codesRouter = Router();
+
+// Unlock codes are delivered by SMS only. The website never returns a code,
+// except a Nigerian payer's own code once right after approval (no SMS support).
+
+const SESSION_MS = 30 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 2 * 60 * 1000;
 
 const revealSchema = z.object({
   code: z.string().min(3),
@@ -21,72 +33,58 @@ const lookupSchema = z.object({
   phone: z.string().min(7),
 });
 
+function startSession(
+  payment: { activeSessionExpiresAt?: Date | null; activeSessionDeviceId?: string; activeSessionToken?: string },
+  deviceId: string,
+  now: Date
+) {
+  payment.activeSessionExpiresAt = new Date(now.getTime() + SESSION_MS);
+  payment.activeSessionDeviceId = deviceId || "device_" + Math.random().toString(36).substring(2, 8);
+  payment.activeSessionToken = randomUUID();
+}
+
 codesRouter.post("/reveal", async (req, res, next) => {
   try {
     const { code, deviceId } = revealSchema.parse(req.body);
     const trimmed = code.trim().toUpperCase();
     const normalized = normalizeRevealCode(code);
 
-    let payment = await Payment.findOne({
-      $or: [
-        { revealCode: normalized },
-        { revealCode: trimmed },
-        { externalRef: trimmed },
-      ],
+    // Only the unlock code itself works here: no phone numbers, no payment references.
+    const payment = await Payment.findOne({
+      revealCode: { $in: [normalized, trimmed] },
       status: "paid",
     });
 
     if (!payment) {
-      const coreDigits = extractCorePhoneDigits(code);
-      if (coreDigits.length >= 7) {
-        const regex = new RegExp(`${coreDigits}$`);
-        payment = await Payment.findOne({
-          phone: regex,
-          status: "paid",
-        }).sort({ createdAt: -1 });
-
-        if (!payment) {
-          const pending = await Payment.findOne({
-            phone: regex,
-            status: { $in: ["proof_submitted", "pending"] },
-          }).sort({ createdAt: -1 });
-
-          if (pending) {
-            throw new HttpError(
-              400,
-              pending.status === "proof_submitted"
-                ? "Your transfer proof is currently awaiting admin approval. As soon as the admin verifies your payment, entering your phone number will unlock your odds!"
-                : "Your payment is currently pending confirmation. Once approved, entering your phone number will unlock your odds here."
-            );
-          }
-        }
-      }
-    }
-
-    if (!payment) {
       throw new HttpError(
         404,
-        "No active paid odds found for this phone number or reveal code. Please check your digits or search by phone."
+        "That unlock code wasn't found. Check the code in your SMS, or use \"Resend my code\" with your phone number."
       );
     }
 
-    if (!payment.revealCode) {
-      payment.revealCode = await generateUniqueRevealCode(payment.product || "odds10");
-      await payment.save();
-    }
-
-
     const now = new Date();
     const isVip = payment.codeType === "vip" || payment.product === "vip";
+    const expiresAt = codeExpiry(payment);
+
+    if (expiresAt <= now) {
+      throw new HttpError(
+        403,
+        isVip
+          ? `This VIP subscription code expired on ${expiresAt.toLocaleDateString()}.`
+          : "This code has expired. Codes are valid for 48 hours after payment."
+      );
+    }
+
+    const isGracePeriod = Boolean(
+      payment.activeSessionExpiresAt &&
+        payment.activeSessionExpiresAt > now &&
+        payment.activeSessionDeviceId &&
+        deviceId &&
+        payment.activeSessionDeviceId === deviceId &&
+        payment.activeSessionToken
+    );
 
     if (isVip) {
-      if (payment.vipExpiresAt && payment.vipExpiresAt < now) {
-        throw new HttpError(
-          403,
-          `This VIP subscription code expired on ${payment.vipExpiresAt.toLocaleDateString()}.`
-        );
-      }
-
       if (deviceId) {
         payment.deviceIds = payment.deviceIds ?? [];
         if (!payment.deviceIds.includes(deviceId)) {
@@ -97,28 +95,21 @@ codesRouter.post("/reveal", async (req, res, next) => {
             );
           }
           payment.deviceIds.push(deviceId);
-          await payment.save();
         }
       }
 
-      // Daily unlock limit: at most 3 times a day everyday for 7 days
+      // Daily unlock limit: at most 3 times a day for 7 days
       const todayKey = now.toISOString().split("T")[0];
       if (payment.dailyUnlockDate !== todayKey) {
         payment.dailyUnlockDate = todayKey;
         payment.dailyUnlockCount = 0;
       }
 
-      const isGracePeriod = Boolean(
-        payment.activeSessionExpiresAt &&
-          payment.activeSessionExpiresAt > now &&
-          payment.activeSessionDeviceId &&
-          deviceId &&
-          payment.activeSessionDeviceId === deviceId
-      );
-
       const maxDaily = payment.maxDailyUnlocks || 3;
-      const msLeft = payment.vipExpiresAt ? payment.vipExpiresAt.getTime() - now.getTime() : 0;
-      const daysRemaining = Math.max(1, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+      const daysRemaining = Math.max(
+        1,
+        Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+      );
 
       if (!isGracePeriod) {
         if ((payment.dailyUnlockCount ?? 0) >= maxDaily) {
@@ -130,30 +121,26 @@ codesRouter.post("/reveal", async (req, res, next) => {
         payment.dailyUnlockCount = (payment.dailyUnlockCount ?? 0) + 1;
         payment.unlockCount = (payment.unlockCount ?? 0) + 1;
         payment.lastUnlockedAt = now;
-        payment.activeSessionExpiresAt = new Date(now.getTime() + 30 * 60 * 1000); // 30-min window
-        payment.activeSessionDeviceId =
-          deviceId || "device_" + Math.random().toString(36).substring(2, 8);
-        await payment.save();
+        startSession(payment, deviceId, now);
       }
+      await payment.save();
 
       const tips = await loadPaidTips("vip");
       const sessionLeft = payment.activeSessionExpiresAt
         ? payment.activeSessionExpiresAt.getTime() - now.getTime()
         : 0;
-      const graceMinutes = Math.max(0, Math.ceil(sessionLeft / 60000));
-      const dailyRemaining = Math.max(0, maxDaily - (payment.dailyUnlockCount ?? 0));
 
       res.json({
         status: "ok",
         type: "vip",
         product: "vip",
-        code: payment.revealCode,
-        vipExpiresAt: payment.vipExpiresAt,
+        sessionToken: payment.activeSessionToken,
+        vipExpiresAt: expiresAt,
         daysRemaining,
         dailyUnlockCount: payment.dailyUnlockCount,
         maxDailyUnlocks: maxDaily,
-        dailyRemainingUnlocks: dailyRemaining,
-        graceMinutesRemaining: graceMinutes,
+        dailyRemainingUnlocks: Math.max(0, maxDaily - (payment.dailyUnlockCount ?? 0)),
+        graceMinutesRemaining: Math.max(0, Math.ceil(sessionLeft / 60000)),
         devicesCount: (payment.deviceIds ?? []).length,
         maxDevices: 2,
         tips,
@@ -161,28 +148,15 @@ codesRouter.post("/reveal", async (req, res, next) => {
       return;
     }
 
-    // Single Slip Logic
-    const isGracePeriod = Boolean(
-      payment.activeSessionExpiresAt &&
-        payment.activeSessionExpiresAt > now &&
-        payment.activeSessionDeviceId &&
-        deviceId &&
-        payment.activeSessionDeviceId === deviceId
-    );
-
+    // Single slip
     const max = payment.maxUnlocks || 2;
-
     if (!isGracePeriod) {
       if ((payment.unlockCount ?? 0) >= max) {
-        throw new HttpError(
-          403,
-          "This code has already been used twice and is now expired."
-        );
+        throw new HttpError(403, "This code has already been used twice and is now expired.");
       }
       payment.unlockCount = (payment.unlockCount ?? 0) + 1;
       payment.lastUnlockedAt = now;
-      payment.activeSessionExpiresAt = new Date(now.getTime() + 30 * 60 * 1000); // 30-min window
-      payment.activeSessionDeviceId = deviceId || "device_" + Math.random().toString(36).substring(2, 8);
+      startSession(payment, deviceId, now);
       await payment.save();
     }
 
@@ -190,17 +164,16 @@ codesRouter.post("/reveal", async (req, res, next) => {
     const msLeft = payment.activeSessionExpiresAt
       ? payment.activeSessionExpiresAt.getTime() - now.getTime()
       : 0;
-    const graceMinutes = Math.max(0, Math.ceil(msLeft / 60000));
 
     res.json({
       status: "ok",
       type: "single",
       product: payment.product,
-      code: payment.revealCode,
+      sessionToken: payment.activeSessionToken,
       unlockCount: payment.unlockCount,
       maxUnlocks: max,
       remainingUnlocks: Math.max(0, max - (payment.unlockCount ?? 0)),
-      graceMinutesRemaining: graceMinutes,
+      graceMinutesRemaining: Math.max(0, Math.ceil(msLeft / 60000)),
       tips,
     });
   } catch (err) {
@@ -208,68 +181,68 @@ codesRouter.post("/reveal", async (req, res, next) => {
   }
 });
 
+/**
+ * "Resend my code": sends the customer's active unlock code(s) by SMS to the
+ * phone number on the payment. Never returns codes in the response (except a
+ * Nigerian payer's code that has never been displayed yet).
+ */
 codesRouter.post("/lookup", async (req, res, next) => {
   try {
     const { phone } = lookupSchema.parse(req.body);
     const coreDigits = extractCorePhoneDigits(phone);
 
     if (coreDigits.length < 7) {
-      throw new HttpError(400, "Enter a valid phone number to search.");
+      throw new HttpError(400, "Enter a valid phone number.");
     }
 
+    await loadProductPrices();
     const regex = new RegExp(`${coreDigits}$`);
-    const payments = await Payment.find({
-      status: "paid",
-      phone: regex,
-    }).sort({ createdAt: -1 });
-
-    for (const p of payments) {
-      if (!p.revealCode) {
-        try {
-          p.revealCode = await generateUniqueRevealCode(p.product || "odds10");
-          await p.save();
-        } catch {
-          // ignore
-        }
-      }
-    }
-
     const now = new Date();
-    const activeCodes = payments
-      .filter((p) => {
-        if (!p.revealCode) return false;
-        if (p.codeType === "vip" || p.product === "vip") {
-          return !p.vipExpiresAt || p.vipExpiresAt > now;
-        }
-        return (p.unlockCount ?? 0) < (p.maxUnlocks || 2);
-      })
-      .map((p) => {
+    const payments = await Payment.find({ status: "paid", phone: regex }).sort({ createdAt: -1 });
 
-        const isVip = p.codeType === "vip" || p.product === "vip";
-        const msLeft = p.vipExpiresAt ? p.vipExpiresAt.getTime() - now.getTime() : 0;
-        const daysRemaining = isVip
-          ? Math.max(1, Math.ceil(msLeft / (1000 * 60 * 60 * 24)))
-          : null;
-        const todayKey = now.toISOString().split("T")[0];
-        const isToday = p.dailyUnlockDate === todayKey;
-        const dailyCount = isToday ? (p.dailyUnlockCount ?? 0) : 0;
-        const maxDaily = p.maxDailyUnlocks || 3;
-        const dailyRemaining = isVip ? Math.max(0, maxDaily - dailyCount) : null;
-        const remainingUnlocks = isVip
-          ? null
-          : Math.max(0, (p.maxUnlocks || 2) - (p.unlockCount ?? 0));
+    const active = payments.filter((p) => {
+      if (codeExpiry(p) <= now) return false;
+      if (p.codeType === "vip" || p.product === "vip") return true;
+      return (p.unlockCount ?? 0) < (p.maxUnlocks || 2);
+    });
 
-        return {
-          code: p.revealCode,
-          product: p.product,
-          type: isVip ? "vip" : "single",
-          createdAt: p.createdAt,
-          remainingUnlocks,
-          daysRemaining,
-          dailyRemainingUnlocks: dailyRemaining,
-          maxDailyUnlocks: isVip ? maxDaily : null,
-        };
-      });
+    const items: Array<{
+      product: string;
+      label: string;
+      type: "vip" | "single";
+      delivery: "sms" | "shown" | "recently_sent" | "unavailable";
+      code?: string;
+    }> = [];
+
+    for (const p of active) {
+      if (!p.revealCode) {
+        p.revealCode = await generateUniqueRevealCode(p.product || "odds10");
+      }
+      const product = p.product || "odds10";
+      const label = getProduct(product)?.label ?? product;
+      const type = p.codeType === "vip" || product === "vip" ? "vip" : "single";
+
+      if (isNigerianPayment(p)) {
+        const code = takeDisplayableCode(p, now);
+        await p.save();
+        items.push({ product, label, type, delivery: code ? "shown" : "unavailable", ...(code ? { code } : {}) });
+        continue;
+      }
+
+      if (p.lastCodeSmsAt && now.getTime() - new Date(p.lastCodeSmsAt).getTime() < RESEND_COOLDOWN_MS) {
+        await p.save();
+        items.push({ product, label, type, delivery: "recently_sent" });
+        continue;
+      }
+
+      const sent = await sendMoolreSms(
+        p.phone || phone,
+        `Oddnext: your ${label} unlock code is ${p.revealCode}. Enter it on the site to view your games. Do not share this code.`
+      ).catch(() => false);
+      if (sent) p.lastCodeSmsAt = now;
+      await p.save();
+      items.push({ product, label, type, delivery: sent ? "sms" : "unavailable" });
+    }
 
     const pendingTransfers = await Payment.find({
       phone: regex,
@@ -277,21 +250,19 @@ codesRouter.post("/lookup", async (req, res, next) => {
       provider: { $in: ["opay", "manual"] },
     }).sort({ createdAt: -1 });
 
-    const pendingList = pendingTransfers.map((p) => ({
-      reference: p.externalRef,
-      product: p.product,
-      amount: p.amount,
-      currency: p.currency || "NGN",
-      status: p.status,
-      proofSubmitted: Boolean(p.proofImage),
-      createdAt: p.createdAt,
-    }));
-
     res.json({
       ok: true,
-      count: activeCodes.length,
-      codes: activeCodes,
-      pending: pendingList,
+      maskedPhone: maskPhone(active[0]?.phone || phone),
+      count: items.length,
+      items,
+      pending: pendingTransfers.map((p) => ({
+        product: p.product,
+        amount: p.amount,
+        currency: p.currency || "NGN",
+        status: p.status,
+        proofSubmitted: Boolean(p.proofImage),
+        createdAt: p.createdAt,
+      })),
     });
   } catch (err) {
     next(err);

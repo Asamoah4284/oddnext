@@ -82,8 +82,11 @@ export function PaidSlip({
             </p>
           </div>
           {revealCode && (
-            <span className="rounded-full bg-fire/15 px-3 py-1 font-mono text-xs font-extrabold text-fire ring-1 ring-fire/30">
-              Pass: {revealCode}
+            <span
+              className="rounded-full bg-fire/15 px-3 py-1 font-mono text-xs font-extrabold text-fire ring-1 ring-fire/30"
+              title="Shown once — write it down"
+            >
+              Unlock code (save it, shown once): {revealCode}
             </span>
           )}
         </div>
@@ -100,7 +103,7 @@ export function PaidSlip({
           ) : remainingUnlocks != null ? (
             `Usable ${remainingUnlocks} more time${remainingUnlocks === 1 ? "" : "s"}${graceMinutes ? ` (Active session: ${graceMinutes}m left)` : ""}.`
           ) : smsSent ? (
-            "This slip is sent to SMS and saved under your reveal code."
+            "Your unlock code was sent by SMS. Use it to view this slip again."
           ) : (
             "Active slip · copy booking codes to bet on SportyBet or BetPawa."
           )}

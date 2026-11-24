@@ -73,6 +73,12 @@ const payoutSchema = new Schema(
       default: "pending",
       index: true,
     },
+    // Monday 00:00 of the payout week this request is drawn against
+    weekStart: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     requestedBy: {
       type: String,
       trim: true,

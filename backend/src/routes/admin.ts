@@ -385,10 +385,32 @@ function computeRevenueBucket(
   };
 }
 
-adminRouter.get("/payments/analytics", async (_req, res, next) => {
+/** Parse a "YYYY-MM-DD" string into a local-time Date at start (or end) of that day. */
+function parseDayParam(value: unknown, endOfDay = false): Date | null {
+  const s = typeof value === "string" ? value.trim() : "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const d = endOfDay
+    ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999)
+    : new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+adminRouter.get("/payments/analytics", async (req, res, next) => {
   try {
     const ghsToNgn = config.ghsToNgn || 114;
     const now = new Date();
+
+    let customFrom = parseDayParam(req.query.from);
+    let customTo = parseDayParam(req.query.to, true);
+    if (customFrom && !customTo) customTo = parseDayParam(req.query.from, true);
+    if (customTo && !customFrom) customFrom = parseDayParam(req.query.to);
+    if (customFrom && customTo && customFrom > customTo) {
+      const swapFrom = parseDayParam(req.query.to);
+      const swapTo = parseDayParam(req.query.from, true);
+      customFrom = swapFrom;
+      customTo = swapTo;
+    }
 
     const startOfDay = new Date(
       now.getFullYear(),
@@ -453,7 +475,31 @@ adminRouter.get("/payments/analytics", async (_req, res, next) => {
       (p) => p.createdAt && new Date(p.createdAt) >= startOfMonth
     );
 
+    const startOfYesterday = new Date(startOfDay);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    const yesterdayPaid = allPaid.filter((p) => {
+      if (!p.createdAt) return false;
+      const t = new Date(p.createdAt);
+      return t >= startOfYesterday && t < startOfDay;
+    });
+
     const day = computeRevenueBucket(dayPaid, ghsToNgn);
+    const yesterday = computeRevenueBucket(yesterdayPaid, ghsToNgn);
+    const custom =
+      customFrom && customTo
+        ? {
+            ...computeRevenueBucket(
+              allPaid.filter((p) => {
+                if (!p.createdAt) return false;
+                const t = new Date(p.createdAt);
+                return t >= customFrom! && t <= customTo!;
+              }),
+              ghsToNgn
+            ),
+            from: customFrom.toISOString(),
+            to: customTo.toISOString(),
+          }
+        : null;
     const week = computeRevenueBucket(weekPaid, ghsToNgn);
     const month = computeRevenueBucket(monthPaid, ghsToNgn);
     const allTime = computeRevenueBucket(allPaid, ghsToNgn);
@@ -568,9 +614,11 @@ adminRouter.get("/payments/analytics", async (_req, res, next) => {
         split: { hisPercent: 60, myPercent: 40 },
         ghsToNgn,
         day,
+        yesterday,
         week,
         month,
         allTime,
+        custom,
         statusCounts: {
           paid: paidCount,
           pending: pendingCount,
@@ -604,6 +652,15 @@ adminRouter.get("/payments", async (req, res, next) => {
     if (status !== "all") query.status = status;
     if (product !== "all") query.product = product;
     if (currency !== "all") query.currency = currency;
+
+    const fromDate = parseDayParam(req.query.from);
+    const toDate = parseDayParam(req.query.to, true);
+    if (fromDate || toDate) {
+      const range: Record<string, Date> = {};
+      if (fromDate) range.$gte = fromDate;
+      if (toDate) range.$lte = toDate;
+      query.createdAt = range;
+    }
 
     if (search) {
       const matchedUsers = await User.find({
@@ -774,12 +831,15 @@ adminRouter.patch("/payments/:id/reject", async (req, res, next) => {
 
 adminRouter.delete("/payments", async (_req, res, next) => {
   try {
-    const result = await Payment.deleteMany({});
-    const usersResult = await User.deleteMany({ role: { $ne: "admin" } });
+    // Only remove demo rows created by "Seed Demo Data" (externalRef "TEST-...").
+    // Real payments (se_/ng_ refs) and customer accounts are never touched.
+    const result = await Payment.deleteMany({ externalRef: { $regex: "^TEST-" } });
     res.json({
-      message: "All mock and test payments have been cleared.",
+      message:
+        result.deletedCount > 0
+          ? `Cleared ${result.deletedCount} demo transaction${result.deletedCount === 1 ? "" : "s"}. Real payments were not touched.`
+          : "No demo transactions to clear. Real payments were not touched.",
       deletedPayments: result.deletedCount,
-      deletedGuestUsers: usersResult.deletedCount,
     });
   } catch (err) {
     next(err);
@@ -919,81 +979,116 @@ const payoutRequestSchema = z.object({
   notes: z.string().trim().optional(),
 });
 
-adminRouter.get("/payouts", async (_req, res, next) => {
-  try {
-    // 1. Compute all-time split earnings from settled paid payments
-    const paidPayments = await Payment.find({ status: "paid" }).select("amount currency");
-    let grossGhs = 0;
-    let grossNgn = 0;
-    for (const p of paidPayments) {
-      if ((p.currency || "GHS").toUpperCase() === "NGN") {
-        grossNgn += p.amount || 0;
-      } else {
-        grossGhs += p.amount || 0;
-      }
-    }
-    const forsonTotalEarnedGhs = Math.round(grossGhs * 0.6 * 100) / 100;
-    const forsonTotalEarnedNgn = Math.round(grossNgn * 0.6 * 100) / 100;
-    const asamoahTotalEarnedGhs = Math.round(grossGhs * 0.4 * 100) / 100;
-    const asamoahTotalEarnedNgn = Math.round(grossNgn * 0.4 * 100) / 100;
+/** Monday 00:00 (server local time) of the week containing `d`. */
+function getWeekStart(d: Date): Date {
+  const day = d.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + diffToMonday, 0, 0, 0, 0);
+}
 
-    // 2. Fetch all payout records
-    const payouts = await Payout.find().sort({ createdAt: -1 });
+function addDays(d: Date, days: number): Date {
+  const out = new Date(d);
+  out.setDate(out.getDate() + days);
+  return out;
+}
 
-    // 3. Compute paid & pending sums for each split admin
-    let forsonPaidGhs = 0, forsonPaidNgn = 0;
-    let forsonPendingGhs = 0, forsonPendingNgn = 0;
-    let asamoahPaidGhs = 0, asamoahPaidNgn = 0;
-    let asamoahPendingGhs = 0, asamoahPendingNgn = 0;
+type PayoutSummary = {
+  earnedGhs: number;
+  earnedNgn: number;
+  paidGhs: number;
+  paidNgn: number;
+  pendingGhs: number;
+  pendingNgn: number;
+  availableGhs: number;
+  availableNgn: number;
+};
 
+/**
+ * Payout balances are strict per week (Mon 00:00 – next Mon 00:00):
+ * each partner can only request their 60% / 40% share of that week's paid sales.
+ * Unrequested share does not carry over to the next week.
+ */
+async function computeWeeklyPayouts(weekStart: Date) {
+  const weekEnd = addDays(weekStart, 7);
+  const round = (val: number) => Math.round(val * 100) / 100;
+
+  const [paidPayments, payouts] = await Promise.all([
+    Payment.find({
+      status: "paid",
+      createdAt: { $gte: weekStart, $lt: weekEnd },
+    }).select("amount currency"),
+    Payout.find({
+      $or: [
+        { weekStart },
+        // Older payouts created before weekStart existed: bucket by request date
+        { weekStart: null, createdAt: { $gte: weekStart, $lt: weekEnd } },
+      ],
+    }).sort({ createdAt: -1 }),
+  ]);
+
+  let grossGhs = 0;
+  let grossNgn = 0;
+  for (const p of paidPayments) {
+    if ((p.currency || "GHS").toUpperCase() === "NGN") grossNgn += p.amount || 0;
+    else grossGhs += p.amount || 0;
+  }
+
+  const make = (share: number, recipient: "Forson" | "Asamoah"): PayoutSummary => {
+    let paidGhs = 0;
+    let paidNgn = 0;
+    let pendingGhs = 0;
+    let pendingNgn = 0;
     for (const po of payouts) {
-      const isForson = po.recipient === "Forson";
+      if (po.recipient !== recipient) continue;
       const isNgn = (po.currency || "GHS").toUpperCase() === "NGN";
       const amt = po.amount || 0;
-
       if (po.status === "paid") {
-        if (isForson) {
-          if (isNgn) forsonPaidNgn += amt;
-          else forsonPaidGhs += amt;
-        } else {
-          if (isNgn) asamoahPaidNgn += amt;
-          else asamoahPaidGhs += amt;
-        }
+        if (isNgn) paidNgn += amt;
+        else paidGhs += amt;
       } else if (po.status === "pending") {
-        if (isForson) {
-          if (isNgn) forsonPendingNgn += amt;
-          else forsonPendingGhs += amt;
-        } else {
-          if (isNgn) asamoahPendingNgn += amt;
-          else asamoahPendingGhs += amt;
-        }
+        if (isNgn) pendingNgn += amt;
+        else pendingGhs += amt;
       }
     }
-
-    const round = (val: number) => Math.round(val * 100) / 100;
-
-    const summary = {
-      forson: {
-        earnedGhs: round(forsonTotalEarnedGhs),
-        earnedNgn: round(forsonTotalEarnedNgn),
-        paidGhs: round(forsonPaidGhs),
-        paidNgn: round(forsonPaidNgn),
-        pendingGhs: round(forsonPendingGhs),
-        pendingNgn: round(forsonPendingNgn),
-        availableGhs: round(Math.max(0, forsonTotalEarnedGhs - forsonPaidGhs - forsonPendingGhs)),
-        availableNgn: round(Math.max(0, forsonTotalEarnedNgn - forsonPaidNgn - forsonPendingNgn)),
-      },
-      asamoah: {
-        earnedGhs: round(asamoahTotalEarnedGhs),
-        earnedNgn: round(asamoahTotalEarnedNgn),
-        paidGhs: round(asamoahPaidGhs),
-        paidNgn: round(asamoahPaidNgn),
-        pendingGhs: round(asamoahPendingGhs),
-        pendingNgn: round(asamoahPendingNgn),
-        availableGhs: round(Math.max(0, asamoahTotalEarnedGhs - asamoahPaidGhs - asamoahPendingGhs)),
-        availableNgn: round(Math.max(0, asamoahTotalEarnedNgn - asamoahPaidNgn - asamoahPendingNgn)),
-      },
+    const earnedGhs = round(grossGhs * share);
+    const earnedNgn = round(grossNgn * share);
+    return {
+      earnedGhs,
+      earnedNgn,
+      paidGhs: round(paidGhs),
+      paidNgn: round(paidNgn),
+      pendingGhs: round(pendingGhs),
+      pendingNgn: round(pendingNgn),
+      availableGhs: round(Math.max(0, earnedGhs - paidGhs - pendingGhs)),
+      availableNgn: round(Math.max(0, earnedNgn - paidNgn - pendingNgn)),
     };
+  };
+
+  return {
+    weekStart,
+    weekEnd,
+    payouts,
+    summary: {
+      forson: make(0.6, "Forson"),
+      asamoah: make(0.4, "Asamoah"),
+    },
+  };
+}
+
+adminRouter.get("/payouts", async (req, res, next) => {
+  try {
+    const currentWeekStart = getWeekStart(new Date());
+    const requested = parseDayParam(req.query.week);
+    const selectedWeekStart = requested ? getWeekStart(requested) : currentWeekStart;
+    const isCurrentWeek = selectedWeekStart.getTime() === currentWeekStart.getTime();
+
+    const [selected, current] = await Promise.all([
+      computeWeeklyPayouts(selectedWeekStart),
+      isCurrentWeek ? null : computeWeeklyPayouts(currentWeekStart),
+    ]);
+    const payouts = selected.payouts;
+    const summary = selected.summary;
+    const currentSummary = (current ?? selected).summary;
 
     const serialized = payouts.map((p) => ({
       id: p._id.toString(),
@@ -1011,6 +1106,7 @@ adminRouter.get("/payouts", async (_req, res, next) => {
       notes: p.notes || "",
       status: p.status,
       requestedBy: p.requestedBy || "",
+      weekStart: p.weekStart || null,
       paidAt: p.paidAt || null,
       paidBy: p.paidBy || "",
       paidReference: p.paidReference || "",
@@ -1021,6 +1117,15 @@ adminRouter.get("/payouts", async (_req, res, next) => {
     res.json({
       payouts: serialized,
       summary,
+      week: {
+        start: selected.weekStart.toISOString(),
+        end: selected.weekEnd.toISOString(),
+        isCurrent: isCurrentWeek,
+      },
+      currentWeek: {
+        start: currentWeekStart.toISOString(),
+        summary: currentSummary,
+      },
     });
   } catch (err) {
     next(err);
@@ -1049,11 +1154,29 @@ adminRouter.post("/payouts", async (req: AuthedRequest, res, next) => {
 
     const splitPercentage = body.recipient === "Forson" ? 60 : 40;
     const requestedBy = req.user?.name || req.user?.email || body.recipient;
+    const amount = Math.round(body.amount * 100) / 100;
+
+    // Requests always draw from the current week's share and can't exceed it.
+    // Payouts stay "pending" until an admin explicitly marks them paid.
+    const weekStart = getWeekStart(new Date());
+    const { summary } = await computeWeeklyPayouts(weekStart);
+    const mine = body.recipient === "Forson" ? summary.forson : summary.asamoah;
+    const available = body.currency === "NGN" ? mine.availableNgn : mine.availableGhs;
+    if (amount > available + 0.001) {
+      const sym = body.currency === "NGN" ? "₦" : "₵";
+      throw new HttpError(
+        400,
+        available > 0
+          ? `${body.recipient} can request at most ${sym}${available.toFixed(2)} this week (${splitPercentage}% share, minus payouts already requested).`
+          : `${body.recipient} has no ${body.currency} balance left to request this week (${splitPercentage}% share).`
+      );
+    }
 
     const payout = await Payout.create({
       recipient: body.recipient,
       splitPercentage,
-      amount: Math.round(body.amount * 100) / 100,
+      weekStart,
+      amount,
       currency: body.currency,
       method: body.method,
       network: body.network || "",

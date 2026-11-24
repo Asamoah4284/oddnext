@@ -62,6 +62,14 @@ const paymentLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Reveal codes are short (e.g. ODD-12345), so cap guesses per IP to stop brute forcing.
+const codesLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many code attempts. Please wait a few minutes and try again." },
+});
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "oddnext-api" });
@@ -80,7 +88,7 @@ app.use("/api/auth", authLimiter, authRouter);
 app.use("/api/tips", tipsRouter);
 app.use("/api/stats", statsRouter);
 app.use("/api/payments", paymentLimiter, paymentsRouter);
-app.use("/api/codes", codesRouter);
+app.use("/api/codes", codesLimiter, codesRouter);
 app.use("/api/admin", adminRouter);
 
 app.use((_req, res) => {

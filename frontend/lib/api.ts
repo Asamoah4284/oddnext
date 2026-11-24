@@ -149,23 +149,36 @@ export async function fetchProducts(): Promise<ProductItem[]> {
   }
 }
 
-export const REVEAL_CODE_KEY = "oddnext_reveal_code";
+/** Stores the 30-minute unlock session token (never the unlock code itself). */
+export const UNLOCK_SESSION_KEY = "oddnext_unlock_session";
 
 export async function fetchTips(
   tab: "yesterday" | "today",
   token?: string | null,
   board: SlipProductId = "odds10",
-  code?: string | null
+  sessionToken?: string | null
 ): Promise<TipsResponse> {
-  const activeCode =
-    code ||
-    (typeof window !== "undefined"
-      ? localStorage.getItem(REVEAL_CODE_KEY)
-      : null);
+  let activeCode = sessionToken || null;
+  if (!activeCode && typeof window !== "undefined") {
+    try {
+      activeCode = localStorage.getItem(UNLOCK_SESSION_KEY);
+    } catch {
+      activeCode = null;
+    }
+  }
 
   const headers: Record<string, string> = {};
   if (activeCode) {
-    headers["x-reveal-code"] = activeCode;
+    headers["x-unlock-session"] = activeCode;
+    // Server only honours the code on the device that revealed it
+    // (deviceId.ts is a client module, so read the stored id directly here)
+    let deviceId = "";
+    try {
+      deviceId = typeof window !== "undefined" ? localStorage.getItem("oddnext_device_id") || "" : "";
+    } catch {
+      deviceId = "";
+    }
+    if (deviceId) headers["x-device-id"] = deviceId;
   }
 
   return apiFetch<TipsResponse>(`/api/tips?tab=${tab}&board=${board}`, {

@@ -188,9 +188,6 @@ export function useMoolrePay() {
       setPaid(result);
       setCheckout(null);
       setOpayCheckout(null);
-      if (result.revealCode && typeof window !== "undefined") {
-        localStorage.setItem("oddnext_reveal_code", result.revealCode);
-      }
       if (result.reference) {
         await ackSlip(result.reference, token).catch(() => {});
       }

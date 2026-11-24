@@ -27,7 +27,11 @@ export type PaymentVerify = {
   smsSent?: boolean;
   slipViewed?: boolean;
   createdAt?: string;
+  /** Only set for a Nigerian payer during the one-time display window; otherwise the code goes by SMS. */
   revealCode?: string;
+  codeDelivery?: "sms" | "screen";
+  maskedPhone?: string;
+  expired?: boolean;
   codeType?: string;
   unlockCount?: number;
   maxUnlocks?: number;

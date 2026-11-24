@@ -6,7 +6,8 @@ export type RevealResponse = {
   status: "ok";
   type: "single" | "vip";
   product: string;
-  code: string;
+  /** Opaque 30-minute unlock session token — the code itself is never returned. */
+  sessionToken: string;
   tips: PaidTip[];
   unlockCount?: number;
   maxUnlocks?: number;
@@ -22,18 +23,16 @@ export type RevealResponse = {
 };
 
 export type LookupCodeItem = {
-  code: string;
   product: string;
+  label: string;
   type: "single" | "vip";
-  createdAt: string;
-  remainingUnlocks: number | null;
-  daysRemaining: number | null;
-  dailyRemainingUnlocks?: number | null;
-  maxDailyUnlocks?: number | null;
+  /** sms: just texted · recently_sent: texted <2 min ago · shown: Nigeria one-time display · unavailable: couldn't deliver */
+  delivery: "sms" | "shown" | "recently_sent" | "unavailable";
+  /** Only present for a Nigerian payer's code during its one-time display. */
+  code?: string;
 };
 
 export type LookupPendingItem = {
-  reference: string;
   product: string;
   amount: number;
   currency: string;
@@ -45,7 +44,8 @@ export type LookupPendingItem = {
 export type LookupResponse = {
   ok: boolean;
   count: number;
-  codes: LookupCodeItem[];
+  maskedPhone: string;
+  items: LookupCodeItem[];
   pending?: LookupPendingItem[];
 };
 

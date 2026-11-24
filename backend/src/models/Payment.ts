@@ -28,8 +28,16 @@ const paymentSchema = new Schema(
     unlockCount: { type: Number, default: 0 },
     maxUnlocks: { type: Number, default: 2 },
     vipExpiresAt: { type: Date, default: null },
+    // Single-slip codes stop working after this time (set when the payment is fulfilled)
+    codeExpiresAt: { type: Date, default: null },
     deviceIds: { type: [String], default: [] },
     activeSessionDeviceId: { type: String, default: "" },
+    // Opaque token for the current 30-min unlock session (sent to the browser instead of the code)
+    activeSessionToken: { type: String, default: "", index: true },
+    // Nigeria only: when the code was first shown on the website (shown for a short window, once)
+    codeShownAt: { type: Date, default: null },
+    // Throttle for "send my code again" SMS
+    lastCodeSmsAt: { type: Date, default: null },
     activeSessionExpiresAt: { type: Date, default: null },
     lastUnlockedAt: { type: Date, default: null },
     dailyUnlockDate: { type: String, default: "" }, // Format: YYYY-MM-DD

@@ -172,8 +172,51 @@ function getProductTheme(id: string, index = 0) {
   return list[index % list.length];
 }
 
+type AnalyticsPeriod = "day" | "yesterday" | "week" | "month" | "allTime" | "custom";
+
+const PERIOD_LABELS: Record<Exclude<AnalyticsPeriod, "custom">, string> = {
+  day: "Today",
+  yesterday: "Yesterday",
+  week: "This Week",
+  month: "This Month",
+  allTime: "All Time",
+};
+
+/** Local date as YYYY-MM-DD (for <input type="date"> and API params). */
+function toDayString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatDayLabel(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
-  const [period, setPeriod] = useState<"day" | "week" | "month" | "allTime">("day");
+  const [period, setPeriod] = useState<AnalyticsPeriod>("day");
+  // Custom date range: drafts are what's in the inputs, applied is what's been requested
+  const [rangeFromDraft, setRangeFromDraft] = useState(() => toDayString(new Date()));
+  const [rangeToDraft, setRangeToDraft] = useState(() => toDayString(new Date()));
+  const [appliedRange, setAppliedRange] = useState<{ from: string; to: string } | null>(null);
+
+  // Date range applied to the transactions list (Yesterday + Custom range narrow the list too)
+  const listDateRange = useMemo<{ from: string; to: string } | null>(() => {
+    if (period === "yesterday") {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const s = toDayString(y);
+      return { from: s, to: s };
+    }
+    if (period === "custom") return appliedRange;
+    return null;
+  }, [period, appliedRange]);
   const [analytics, setAnalytics] = useState<PaymentAnalyticsData | null>(null);
   const [payments, setPayments] = useState<AdminPaymentItem[]>([]);
   const [loadingAnalytics, setLoadingAnalytics] = useState(true);
@@ -204,6 +247,14 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
     asamoah: PayoutAdminSummary;
   } | null>(null);
   const [loadingPayouts, setLoadingPayouts] = useState(false);
+  // Payout week being viewed (any YYYY-MM-DD inside the week; server snaps to Monday)
+  const [payoutWeek, setPayoutWeek] = useState(() => toDayString(new Date()));
+  const [payoutWeekInfo, setPayoutWeekInfo] = useState<{ start: string; end: string; isCurrent: boolean } | null>(null);
+  // Current week's balances — the only week new requests can draw from
+  const [currentWeekSummary, setCurrentWeekSummary] = useState<{
+    forson: PayoutAdminSummary;
+    asamoah: PayoutAdminSummary;
+  } | null>(null);
   const [payoutFilter, setPayoutFilter] = useState<"all" | "pending" | "paid" | "Forson" | "Asamoah">("all");
   const [payoutSearch, setPayoutSearch] = useState("");
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
@@ -299,8 +350,11 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
     try {
       setLoadingAnalytics(true);
       setError("");
+      const qs = appliedRange
+        ? `?${new URLSearchParams({ from: appliedRange.from, to: appliedRange.to }).toString()}`
+        : "";
       const res = await apiFetch<{ analytics: PaymentAnalyticsData }>(
-        "/api/admin/payments/analytics",
+        `/api/admin/payments/analytics${qs}`,
         { token }
       );
       setAnalytics(res.analytics);
@@ -315,27 +369,52 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
     if (!token) return;
     try {
       setLoadingPayouts(true);
-      const res = await apiFetch<PayoutsResponse>("/api/admin/payouts", { token });
+      const res = await apiFetch<PayoutsResponse>(
+        `/api/admin/payouts?week=${encodeURIComponent(payoutWeek)}`,
+        { token }
+      );
       setPayouts(res.payouts || []);
       setPayoutSummary(res.summary || null);
+      setPayoutWeekInfo(res.week || null);
+      setCurrentWeekSummary(res.currentWeek?.summary || res.summary || null);
     } catch (err) {
       console.warn("Payouts endpoint response:", err);
+      const empty: PayoutAdminSummary = { earnedGhs: 0, earnedNgn: 0, availableGhs: 0, availableNgn: 0, paidGhs: 0, paidNgn: 0, pendingGhs: 0, pendingNgn: 0 };
       setPayouts([]);
-      setPayoutSummary({
-        forson: { earnedGhs: 0, earnedNgn: 0, availableGhs: 0, availableNgn: 0, paidGhs: 0, paidNgn: 0, pendingGhs: 0, pendingNgn: 0 },
-        asamoah: { earnedGhs: 0, earnedNgn: 0, availableGhs: 0, availableNgn: 0, paidGhs: 0, paidNgn: 0, pendingGhs: 0, pendingNgn: 0 },
-      });
+      setPayoutSummary({ forson: empty, asamoah: empty });
+      setCurrentWeekSummary({ forson: empty, asamoah: empty });
     } finally {
       setLoadingPayouts(false);
     }
   }
 
+  function availableFor(admin: "Forson" | "Asamoah", currency: "GHS" | "NGN"): number {
+    const s = admin === "Forson" ? currentWeekSummary?.forson : currentWeekSummary?.asamoah;
+    if (!s) return 0;
+    return currency === "NGN" ? s.availableNgn : s.availableGhs;
+  }
+
+  function shiftPayoutWeek(deltaWeeks: number) {
+    const base = payoutWeekInfo ? new Date(payoutWeekInfo.start) : new Date();
+    base.setDate(base.getDate() + deltaWeeks * 7);
+    setPayoutWeek(toDayString(base));
+  }
+
+  const payoutWeekLabel = useMemo(() => {
+    if (!payoutWeekInfo) return "This week";
+    const start = new Date(payoutWeekInfo.start);
+    const end = new Date(payoutWeekInfo.end);
+    end.setDate(end.getDate() - 1); // show Sunday, not next Monday
+    const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return `${fmt(start)} – ${fmt(end)}, ${end.getFullYear()}`;
+  }, [payoutWeekInfo]);
+
   function openPayoutModalFor(admin: "Forson" | "Asamoah") {
     setPayoutRecipient(admin);
     setPayoutCurrency("GHS");
     const avail = admin === "Forson"
-      ? (payoutSummary?.forson?.availableGhs ?? 0)
-      : (payoutSummary?.asamoah?.availableGhs ?? 0);
+      ? (currentWeekSummary?.forson?.availableGhs ?? 0)
+      : (currentWeekSummary?.asamoah?.availableGhs ?? 0);
     setPayoutAmount(avail > 0 ? avail.toFixed(2) : "");
     setPayoutAccountName(admin === "Forson" ? "Forson Kwarteng" : "Asamoah");
     setPayoutModalError("");
@@ -349,6 +428,16 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
     const num = parseFloat(payoutAmount);
     if (!num || num <= 0) {
       setPayoutModalError("Enter a valid payout amount greater than 0");
+      return;
+    }
+    const maxAllowed = availableFor(payoutRecipient, payoutCurrency);
+    if (num > maxAllowed + 0.001) {
+      const sym = payoutCurrency === "NGN" ? "₦" : "₵";
+      setPayoutModalError(
+        maxAllowed > 0
+          ? `${payoutRecipient} can request at most ${sym}${maxAllowed.toFixed(2)} this week (${payoutRecipient === "Forson" ? "60" : "40"}% share).`
+          : `${payoutRecipient} has no ${payoutCurrency} balance left to request this week.`
+      );
       return;
     }
     if (!payoutAccountName.trim()) {
@@ -453,6 +542,10 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
       if (productFilter !== "all") params.set("product", productFilter);
       if (currencyFilter !== "all") params.set("currency", currencyFilter);
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
+      if (listDateRange) {
+        params.set("from", listDateRange.from);
+        params.set("to", listDateRange.to);
+      }
 
       const res = await apiFetch<{
         payments: AdminPaymentItem[];
@@ -471,15 +564,19 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
   }
 
   useEffect(() => {
-    void loadAnalytics();
     void loadPayouts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, payoutWeek]);
+
+  useEffect(() => {
+    void loadAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, appliedRange]);
 
   useEffect(() => {
     void loadPayments(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, statusFilter, productFilter, currencyFilter, searchQuery]);
+  }, [token, statusFilter, productFilter, currencyFilter, searchQuery, listDateRange?.from, listDateRange?.to]);
 
   async function handleMarkPaid(id: string) {
     if (!token) return;
@@ -602,7 +699,7 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
     if (!token) return;
     if (
       !window.confirm(
-        "Are you sure you want to clear all mock/test payments? This action cannot be undone."
+        "Clear demo transactions created by \"Seed Demo Data\"? Real customer payments are not affected."
       )
     ) {
       return;
@@ -667,29 +764,48 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
   }
 
   const activeBucket: RevenueBucket = useMemo(() => {
-    if (!analytics) {
-      return {
-        grossGhs: 0,
-        grossNgn: 0,
-        combinedGhs: 0,
-        hisGhs: 0,
-        myGhs: 0,
-        hisNgn: 0,
-        myNgn: 0,
-        combinedHisGhs: 0,
-        combinedMyGhs: 0,
-        count: 0,
-      };
-    }
+    const empty: RevenueBucket = {
+      grossGhs: 0,
+      grossNgn: 0,
+      combinedGhs: 0,
+      hisGhs: 0,
+      myGhs: 0,
+      hisNgn: 0,
+      myNgn: 0,
+      combinedHisGhs: 0,
+      combinedMyGhs: 0,
+      count: 0,
+    };
+    if (!analytics) return empty;
+    if (period === "custom") return analytics.custom || empty;
+    if (period === "yesterday") return analytics.yesterday || empty;
     return analytics[period] || analytics.day;
   }, [analytics, period]);
 
-  const periodLabel = {
-    day: "Today (24h)",
-    week: "This Week",
-    month: "This Month",
-    allTime: "All Time",
-  }[period];
+  const periodLabel =
+    period === "custom"
+      ? appliedRange
+        ? appliedRange.from === appliedRange.to
+          ? formatDayLabel(appliedRange.from)
+          : `${formatDayLabel(appliedRange.from)} – ${formatDayLabel(appliedRange.to)}`
+        : "Custom Range"
+      : PERIOD_LABELS[period];
+
+  function handleApplyRange(e: React.FormEvent) {
+    e.preventDefault();
+    if (!rangeFromDraft || !rangeToDraft) return;
+    const [from, to] =
+      rangeFromDraft <= rangeToDraft ? [rangeFromDraft, rangeToDraft] : [rangeToDraft, rangeFromDraft];
+    setRangeFromDraft(from);
+    setRangeToDraft(to);
+    setAppliedRange({ from, to });
+    setPeriod("custom");
+  }
+
+  function handleClearRange() {
+    setAppliedRange(null);
+    setPeriod("day");
+  }
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -777,35 +893,84 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
       )}
 
       {/* Period Selection Navigation Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200/80 pb-3">
-        <div className="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200/60">
-          {(["day", "week", "month", "allTime"] as const).map((p) => {
-            const labels = {
-              day: "Today (24h)",
-              week: "This Week",
-              month: "This Month",
-              allTime: "All Time",
-            };
-            const active = period === p;
-            return (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setPeriod(p)}
-                className={`rounded-lg py-1.5 px-3 sm:px-4 text-xs font-semibold transition ${
-                  active
-                    ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {labels[p]}
-              </button>
-            );
-          })}
+      <div className="space-y-3 border-b border-slate-200/80 pb-3">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex flex-wrap p-1 bg-slate-100 rounded-xl border border-slate-200/60">
+              {(["day", "yesterday", "week", "month", "allTime", "custom"] as const).map((p) => {
+                const active = period === p;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPeriod(p)}
+                    className={`rounded-lg py-1.5 px-3 sm:px-4 text-xs font-semibold transition ${
+                      active
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    {p === "custom" ? "Custom Range" : PERIOD_LABELS[p]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">
+            Showing profit split for: <strong className="text-slate-800">{periodLabel}</strong>
+          </p>
         </div>
-        <p className="text-xs text-slate-500">
-          Showing profit split for: <strong className="text-slate-800">{periodLabel}</strong>
-        </p>
+
+        {period === "custom" && (
+          <form
+            onSubmit={handleApplyRange}
+            className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs"
+          >
+            <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              From
+              <input
+                type="date"
+                value={rangeFromDraft}
+                max={toDayString(new Date())}
+                onChange={(e) => setRangeFromDraft(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              To
+              <input
+                type="date"
+                value={rangeToDraft}
+                max={toDayString(new Date())}
+                onChange={(e) => setRangeToDraft(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium normal-case tracking-normal text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                required
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={loadingAnalytics}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Apply
+            </button>
+            {appliedRange && (
+              <button
+                type="button"
+                onClick={handleClearRange}
+                className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                Clear
+              </button>
+            )}
+            <p className="w-full text-[11px] text-slate-400 sm:ml-2 sm:w-auto">
+              {appliedRange
+                ? "Revenue cards and the transactions list are filtered to this range."
+                : "Pick a start and end date, then press Apply."}
+            </p>
+          </form>
+        )}
       </div>
 
       {/* 3 Main Highlight KPI Cards (Gross, Forson 60%, Asamoah 40%) */}
@@ -867,15 +1032,17 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
               </div>
             </div>
 
-            {payoutSummary?.forson && (
+            {currentWeekSummary?.forson && (
               <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-amber-50/50 p-2.5 border border-amber-200/50 text-[11px]">
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Total Paid</span>
-                  <span className="font-mono font-bold text-emerald-700">₵{payoutSummary.forson.paidGhs.toFixed(2)}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Requested (Week)</span>
+                  <span className="font-mono font-bold text-emerald-700">
+                    ₵{(currentWeekSummary.forson.paidGhs + currentWeekSummary.forson.pendingGhs).toFixed(2)}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Available</span>
-                  <span className="font-mono font-bold text-amber-800">₵{payoutSummary.forson.availableGhs.toFixed(2)}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Available (Week)</span>
+                  <span className="font-mono font-bold text-amber-800">₵{currentWeekSummary.forson.availableGhs.toFixed(2)}</span>
                 </div>
               </div>
             )}
@@ -923,15 +1090,17 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
               </div>
             </div>
 
-            {payoutSummary?.asamoah && (
+            {currentWeekSummary?.asamoah && (
               <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-indigo-50/50 p-2.5 border border-indigo-200/50 text-[11px]">
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Total Paid</span>
-                  <span className="font-mono font-bold text-emerald-700">₵{payoutSummary.asamoah.paidGhs.toFixed(2)}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Requested (Week)</span>
+                  <span className="font-mono font-bold text-emerald-700">
+                    ₵{(currentWeekSummary.asamoah.paidGhs + currentWeekSummary.asamoah.pendingGhs).toFixed(2)}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Available</span>
-                  <span className="font-mono font-bold text-indigo-800">₵{payoutSummary.asamoah.availableGhs.toFixed(2)}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase font-semibold">Available (Week)</span>
+                  <span className="font-mono font-bold text-indigo-800">₵{currentWeekSummary.asamoah.availableGhs.toFixed(2)}</span>
                 </div>
               </div>
             )}
@@ -1190,17 +1359,54 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                   Admin Split Payouts & Disbursements
                 </h3>
                 <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-                  {payouts.length} total
+                  {payouts.length} this week
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Request and track profit distributions via Mobile Money and Bank Transfer for Forson (60%) and Asamoah (40%).
+                Weekly payouts (Mon–Sun). Forson can request up to 60% and Asamoah up to 40% of each week&apos;s sales. Unrequested share doesn&apos;t carry over.
               </p>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white shadow-2xs">
+              <button
+                type="button"
+                onClick={() => shiftPayoutWeek(-1)}
+                disabled={loadingPayouts}
+                className="px-2.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 rounded-l-xl disabled:opacity-50"
+                title="Previous week"
+              >
+                ‹
+              </button>
+              <span className="px-2 text-xs font-semibold text-slate-800 whitespace-nowrap">
+                {payoutWeekLabel}
+                {payoutWeekInfo?.isCurrent && (
+                  <span className="ml-1.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                    Current
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => shiftPayoutWeek(1)}
+                disabled={loadingPayouts || payoutWeekInfo?.isCurrent !== false}
+                className="px-2.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 rounded-r-xl disabled:opacity-30"
+                title="Next week"
+              >
+                ›
+              </button>
+            </div>
+            {payoutWeekInfo && !payoutWeekInfo.isCurrent && (
+              <button
+                type="button"
+                onClick={() => setPayoutWeek(toDayString(new Date()))}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 shadow-2xs"
+              >
+                This week
+              </button>
+            )}
             <button
               type="button"
               onClick={() => loadPayouts()}
@@ -1236,7 +1442,7 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                 ₵{payoutSummary.forson.availableGhs.toFixed(2)}
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5">
-                Paid: ₵{payoutSummary.forson.paidGhs.toFixed(2)} · Pending: ₵{payoutSummary.forson.pendingGhs.toFixed(2)}
+                Share: ₵{payoutSummary.forson.earnedGhs.toFixed(2)} · Paid: ₵{payoutSummary.forson.paidGhs.toFixed(2)} · Pending: ₵{payoutSummary.forson.pendingGhs.toFixed(2)}
               </p>
             </div>
 
@@ -1251,7 +1457,7 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                 ₵{payoutSummary.asamoah.availableGhs.toFixed(2)}
               </p>
               <p className="text-[10px] text-slate-400 mt-0.5">
-                Paid: ₵{payoutSummary.asamoah.paidGhs.toFixed(2)} · Pending: ₵{payoutSummary.asamoah.pendingGhs.toFixed(2)}
+                Share: ₵{payoutSummary.asamoah.earnedGhs.toFixed(2)} · Paid: ₵{payoutSummary.asamoah.paidGhs.toFixed(2)} · Pending: ₵{payoutSummary.asamoah.pendingGhs.toFixed(2)}
               </p>
             </div>
 
@@ -2794,7 +3000,7 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                     onClick={() => {
                       setPayoutRecipient("Forson");
                       setPayoutAccountName("Forson Kwarteng");
-                      const avail = payoutSummary?.forson?.availableGhs ?? 0;
+                      const avail = availableFor("Forson", payoutCurrency);
                       if (!payoutAmount || parseFloat(payoutAmount) <= 0) {
                         setPayoutAmount(avail > 0 ? avail.toFixed(2) : "");
                       }
@@ -2811,7 +3017,7 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                     <div className="text-left">
                       <p className="text-xs font-bold text-slate-900">Forson (60%)</p>
                       <p className="text-[10px] text-slate-500 font-mono">
-                        Avail: ₵{payoutSummary?.forson?.availableGhs.toFixed(2) ?? "0.00"}
+                        Avail this week: {payoutCurrency === "NGN" ? "₦" : "₵"}{availableFor("Forson", payoutCurrency).toFixed(2)}
                       </p>
                     </div>
                   </button>
@@ -2821,7 +3027,7 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                     onClick={() => {
                       setPayoutRecipient("Asamoah");
                       setPayoutAccountName("Asamoah");
-                      const avail = payoutSummary?.asamoah?.availableGhs ?? 0;
+                      const avail = availableFor("Asamoah", payoutCurrency);
                       if (!payoutAmount || parseFloat(payoutAmount) <= 0) {
                         setPayoutAmount(avail > 0 ? avail.toFixed(2) : "");
                       }
@@ -2838,7 +3044,7 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                     <div className="text-left">
                       <p className="text-xs font-bold text-slate-900">Asamoah (40%)</p>
                       <p className="text-[10px] text-slate-500 font-mono">
-                        Avail: ₵{payoutSummary?.asamoah?.availableGhs.toFixed(2) ?? "0.00"}
+                        Avail this week: {payoutCurrency === "NGN" ? "₦" : "₵"}{availableFor("Asamoah", payoutCurrency).toFixed(2)}
                       </p>
                     </div>
                   </button>
@@ -2854,9 +3060,7 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                   <button
                     type="button"
                     onClick={() => {
-                      const avail = payoutRecipient === "Forson"
-                        ? (payoutSummary?.forson?.availableGhs ?? 0)
-                        : (payoutSummary?.asamoah?.availableGhs ?? 0);
+                      const avail = availableFor(payoutRecipient, payoutCurrency);
                       if (avail > 0) setPayoutAmount(avail.toFixed(2));
                     }}
                     className="text-[11px] font-bold text-blue-600 hover:underline"
@@ -2876,7 +3080,7 @@ export function AdminPaymentsAnalytics({ token }: AdminPaymentsAnalyticsProps) {
                   <input
                     type="number"
                     step="0.01"
-                    min="1"
+                    min="0.01"
                     required
                     value={payoutAmount}
                     onChange={(e) => setPayoutAmount(e.target.value)}

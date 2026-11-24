@@ -6,7 +6,7 @@ import { MoolreCheckout } from "@/components/MoolreCheckout";
 import { NigeriaPaymentModal } from "@/components/NigeriaPaymentModal";
 import { PaidSlip } from "@/components/PaidSlip";
 import { PhoneField } from "@/components/PhoneField";
-import { fetchTips } from "@/lib/api";
+import { UNLOCK_SESSION_KEY, fetchTips } from "@/lib/api";
 import { useMoolrePay } from "@/hooks/useMoolrePay";
 import type { PaymentVerify } from "@/lib/payments";
 import { formatKickoff } from "@/lib/format";
@@ -82,16 +82,29 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
   const [revealInput, setRevealInput] = useState("");
   const [revealBusy, setRevealBusy] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
-  const [activeCode, setActiveCode] = useState<string | null>(null);
+  // 30-minute unlock session token from /api/codes/reveal (never the code itself)
+  const [unlockSession, setUnlockSession] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("oddnext_reveal_code");
-      if (saved) {
-        setActiveCode(saved);
-      }
+    try {
+      // Remove codes saved by older versions of the site
+      localStorage.removeItem("oddnext_reveal_code");
+      const saved = localStorage.getItem(UNLOCK_SESSION_KEY);
+      if (saved) setUnlockSession(saved);
+    } catch {
+      // storage unavailable
     }
   }, []);
+
+  const saveUnlockSession = (tokenValue: string | null) => {
+    try {
+      if (tokenValue) localStorage.setItem(UNLOCK_SESSION_KEY, tokenValue);
+      else localStorage.removeItem(UNLOCK_SESSION_KEY);
+    } catch {
+      // storage unavailable
+    }
+    setUnlockSession(tokenValue);
+  };
 
   const [showLookupModal, setShowLookupModal] = useState(false);
   const [lookupPhoneInput, setLookupPhoneInput] = useState("");
@@ -125,26 +138,33 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
     };
   }, []);
 
+  const applyReveal = (res: RevealResponse) => {
+    setRevealedSlip(res);
+    saveUnlockSession(res.sessionToken || null);
+    if (res.product && res.product !== "vip") {
+      setBoard(res.product as SlipProductId);
+    }
+    setShowLookupModal(false);
+  };
+
   const handleReveal = async (codeToUse?: string) => {
     const target = (codeToUse || revealInput).trim();
     if (!target) {
-      setRevealError("Please enter your phone number or reveal code");
+      setRevealError("Enter the unlock code from your SMS");
+      return;
+    }
+    // A phone number here means "text me my code" — open the SMS flow instead
+    if (!/[a-zA-Z]/.test(target)) {
+      setRevealError(null);
+      setShowLookupModal(true);
+      setLookupPhoneInput(target);
+      void handleLookup(target);
       return;
     }
     setRevealBusy(true);
     setRevealError(null);
     try {
-      const res = await revealCode(target);
-      setRevealedSlip(res);
-      const codeKey = res.code || target;
-      if (typeof window !== "undefined") {
-        localStorage.setItem("oddnext_reveal_code", codeKey);
-      }
-      setActiveCode(codeKey);
-      if (res.product && res.product !== "vip") {
-        setBoard(res.product as SlipProductId);
-      }
-      setShowLookupModal(false);
+      applyReveal(await revealCode(target));
     } catch (err) {
       setRevealError(err instanceof Error ? err.message : "Failed to reveal odds");
     } finally {
@@ -153,82 +173,62 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
   };
 
   const clearActiveCode = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("oddnext_reveal_code");
-    }
-    setActiveCode(null);
+    saveUnlockSession(null);
     setRevealedSlip(null);
   };
 
-  const handleLookup = async () => {
-    const input = lookupPhoneInput.trim();
+  const [lookupNotice, setLookupNotice] = useState<string | null>(null);
+
+  async function handleLookup(override?: string) {
+    const input = (override ?? lookupPhoneInput).trim();
     if (!input) {
-      setLookupError("Enter your phone number or reveal code");
+      setLookupError("Enter your unlock code, or your phone number to get it by SMS");
       return;
     }
     setLookupBusy(true);
     setLookupError(null);
+    setLookupNotice(null);
     setFoundCodes(null);
     setFoundPending(null);
 
-    // If input contains letters or starts with typical code prefixes, reveal directly
-    const hasLetters = /[a-zA-Z]/.test(input);
-    if (hasLetters || input.toUpperCase().startsWith("VIP") || input.toUpperCase().startsWith("ODD")) {
+    // Looks like a code (has letters) → unlock directly
+    if (/[a-zA-Z]/.test(input)) {
       try {
-        const res = await revealCode(input);
-        setRevealedSlip(res);
-        const codeKey = res.code || input;
-        if (typeof window !== "undefined") {
-          localStorage.setItem("oddnext_reveal_code", codeKey);
-        }
-        setActiveCode(codeKey);
-        if (res.product && res.product !== "vip") {
-          setBoard(res.product as SlipProductId);
-        }
-        setShowLookupModal(false);
-        return;
+        applyReveal(await revealCode(input));
       } catch (err) {
         setLookupError(err instanceof Error ? err.message : "Code not found");
+      } finally {
         setLookupBusy(false);
-        return;
       }
+      return;
     }
 
+    // Phone number → server texts the code(s) to that phone; nothing is shown here
     try {
       const res = await lookupCodesByPhone(input);
-      setFoundCodes(res.codes);
+      setFoundCodes(res.items);
       setFoundPending(res.pending || null);
-      if (res.codes.length === 0 && (!res.pending || res.pending.length === 0)) {
-        // Fallback: try direct reveal by phone number
-        try {
-          const direct = await revealCode(input);
-          if (direct && direct.tips && direct.tips.length > 0) {
-            setRevealedSlip(direct);
-            const codeKey = direct.code || input;
-            if (typeof window !== "undefined") {
-              localStorage.setItem("oddnext_reveal_code", codeKey);
-            }
-            setActiveCode(codeKey);
-            setShowLookupModal(false);
-            return;
-          }
-        } catch {
-          // ignore fallback error
-        }
-        setLookupError("No active paid odds found for this phone number or code");
+      const sms = res.items.filter((i) => i.delivery === "sms").length;
+      const recent = res.items.filter((i) => i.delivery === "recently_sent").length;
+      if (sms > 0) {
+        setLookupNotice(`We've sent your unlock code by SMS to ${res.maskedPhone}. Enter it above to view your games.`);
+      } else if (recent > 0) {
+        setLookupNotice(`Your code was sent to ${res.maskedPhone} in the last 2 minutes. Please check your messages.`);
+      } else if (res.items.length === 0 && (!res.pending || res.pending.length === 0)) {
+        setLookupError("No active paid odds found for this phone number.");
       }
     } catch (err) {
       setLookupError(err instanceof Error ? err.message : "Lookup failed");
     } finally {
       setLookupBusy(false);
     }
-  };
+  }
 
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
     setLoading(true);
-    fetchTips(tab, token, board, activeCode)
+    fetchTips(tab, token, board, unlockSession)
       .then((next) => {
         if (!cancelled) setData(next);
       })
@@ -250,7 +250,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
     return () => {
       cancelled = true;
     };
-  }, [tab, board, token, ready, user?.vipActive, user?.entitlements, activeCode]);
+  }, [tab, board, token, ready, user?.vipActive, user?.entitlements, unlockSession]);
 
   const clusters = useMemo(() => {
     const groups: { code: string; tips: Tip[] }[] = [];
@@ -316,20 +316,18 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
         ))}
       </div>
 
-      {activeCode && (
+      {unlockSession && data.boardAccess && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-fire/30 bg-fire/10 px-4 py-2.5 text-xs">
           <div className="flex items-center gap-2">
             <span className="flex h-2 w-2 rounded-full bg-fire animate-pulse" />
-            <span className="text-mute">
-              Active VIP / Reveal Pass: <strong className="font-mono text-cream font-bold">{activeCode}</strong>
-            </span>
+            <span className="text-mute">Unlocked with your SMS code on this device.</span>
           </div>
           <button
             type="button"
             onClick={clearActiveCode}
             className="text-xs font-semibold text-mute hover:text-fire underline"
           >
-            Clear / Switch Code
+            Lock / Use another code
           </button>
         </div>
       )}
@@ -354,7 +352,6 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
           <PaidSlip
             tips={revealedSlip.tips}
             product={revealedSlip.product}
-            revealCode={revealedSlip.code}
             remainingUnlocks={revealedSlip.remainingUnlocks}
             daysRemaining={revealedSlip.daysRemaining}
             dailyRemainingUnlocks={revealedSlip.dailyRemainingUnlocks}
@@ -377,7 +374,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
             tips={paid.tips ?? []}
             product={paid.product}
             smsSent={paid.smsSent}
-            revealCode={paid.revealCode}
+            revealCode={paid.revealCode /* server only sends this for Nigeria, once */}
           />
           <button
             type="button"
@@ -445,16 +442,16 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                 <div className="w-full border-t border-line/80" />
               </div>
               <span className="relative rounded-full border border-line bg-surface px-4 py-1 text-xs font-bold uppercase tracking-wider text-mute">
-                Already paid? Unlock with phone or code
+                Already paid? Enter your SMS code
               </span>
             </div>
 
             <div id="reveal-code" className="mx-auto max-w-sm rounded-2xl border border-fire/30 bg-paper/90 p-5 text-left shadow-lg ring-1 ring-fire/20">
               <label htmlFor="reveal-input" className="flex items-center gap-1.5 text-xs font-bold text-cream">
-                <span>🔑</span> Enter Phone Number or Reveal Code
+                <span>🔑</span> Enter Your Unlock Code
               </label>
               <p className="mt-1 text-[11px] text-mute">
-                Paid in Nigeria or Ghana? Enter the phone number you paid with to see your odds.
+                Your unlock code was sent by SMS to the phone you paid with. Lost it? Enter your phone number and we&apos;ll text it again.
               </p>
               <div className="mt-2.5 flex gap-2">
                 <input
@@ -470,7 +467,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                       void handleReveal();
                     }
                   }}
-                  placeholder="e.g. 07082511762 or VIP-12345"
+                  placeholder="e.g. ODD-12345"
                   className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 font-mono text-sm uppercase tracking-wider text-cream focus:border-fire focus:ring-1 focus:ring-fire/30 focus:outline-none"
                 />
                 <button
@@ -486,18 +483,19 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                 <p className="mt-2 text-xs font-medium text-lost">{revealError}</p>
               )}
               <div className="mt-3 flex items-center justify-between border-t border-line/60 pt-2 text-xs text-mute">
-                <span>Checking payment status?</span>
+                <span>Didn&apos;t get the SMS?</span>
                 <button
                   type="button"
                   onClick={() => {
                     setShowLookupModal(true);
                     setLookupError(null);
+                    setLookupNotice(null);
                     setFoundCodes(null);
                     if (phone) setLookupPhoneInput(phone);
                   }}
                   className="font-bold text-fire hover:underline"
                 >
-                  Check by phone number →
+                  Resend my code →
                 </button>
               </div>
             </div>
@@ -596,7 +594,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                   Instant Unlock
                 </p>
                 <h3 className="mt-1 font-sans text-xl font-extrabold text-cream">
-                  Reveal Odds or Check Code
+                  Unlock or Resend Code
                 </h3>
               </div>
               <button
@@ -609,7 +607,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
             </div>
 
             <p className="mt-2 text-xs leading-relaxed text-mute">
-              Enter your Reveal Code (e.g. <span className="font-mono text-star font-bold">VIP-12345</span>) or the phone number you paid with to see your predictions.
+              Enter the unlock code from your SMS (e.g. <span className="font-mono text-star font-bold">ODD-12345</span>) to see your games. Lost it? Enter the phone number you paid with and we&apos;ll text your code to that phone.
             </p>
 
             <div className="mt-4 flex gap-2">
@@ -625,7 +623,7 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                     void handleLookup();
                   }
                 }}
-                placeholder="e.g. VIP-12345 or 07082511762"
+                placeholder="Code (ODD-12345) or phone number"
                 className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-cream focus:border-fire focus:outline-none"
               />
               <button
@@ -634,12 +632,18 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                 disabled={lookupBusy || !lookupPhoneInput.trim()}
                 className="btn-primary whitespace-nowrap px-4 py-2 text-xs"
               >
-                {lookupBusy ? "Checking…" : "Unlock / Check"}
+                {lookupBusy ? "Checking…" : "Unlock / Send"}
               </button>
             </div>
 
             {lookupError && (
               <p className="mt-3 text-xs text-lost">{lookupError}</p>
+            )}
+
+            {lookupNotice && (
+              <p className="mt-3 rounded-xl border border-fire/30 bg-fire/10 px-3 py-2 text-xs text-cream">
+                📩 {lookupNotice}
+              </p>
             )}
 
             {foundPending && foundPending.length > 0 && (
@@ -649,15 +653,15 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
                   <span>Payment Under Admin Review</span>
                 </div>
                 {foundPending.map((p) => (
-                  <div key={p.reference} className="text-[11px] text-cream/90 font-mono bg-surface/60 rounded-xl p-2.5 border border-line">
+                  <div key={`${p.product}-${p.createdAt}`} className="text-[11px] text-cream/90 font-mono bg-surface/60 rounded-xl p-2.5 border border-line">
                     <p className="font-bold text-cream">
                       {p.product.toUpperCase()} Transfer ({p.currency} {Number(p.amount).toLocaleString()})
                     </p>
                     <p className="text-mute text-[10px] mt-0.5">
-                      Ref: {p.reference} · {p.proofSubmitted ? "Proof received" : "Awaiting proof"}
+                      {p.proofSubmitted ? "Proof received" : "Awaiting proof"}
                     </p>
                     <p className="text-amber-400 text-[10px] mt-1">
-                      Our admin is verifying your Opay transfer. Once approved, your odds SMS and reveal code will be activated!
+                      Our admin is verifying your Opay transfer. Once approved, come back here and enter your phone number to get your unlock code.
                     </p>
                   </div>
                 ))}
@@ -666,35 +670,34 @@ export function TipsTable({ initial }: { initial: TipsResponse }) {
 
             {foundCodes && foundCodes.length > 0 && (
               <div className="mt-5 space-y-2">
-                <p className="text-xs font-semibold text-cream">Active codes found:</p>
+                <p className="text-xs font-semibold text-cream">Your active purchases:</p>
                 <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
-                  {foundCodes.map((c) => (
+                  {foundCodes.map((c, i) => (
                     <div
-                      key={c.code}
+                      key={`${c.product}-${i}`}
                       className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface/60 p-3"
                     >
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm font-black tracking-wide text-star">
-                            {c.code}
-                          </span>
-                          <span className="rounded bg-fire/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-fire">
-                            {c.type === "vip" ? "VIP" : c.product}
-                          </span>
-                        </div>
+                        <span className="rounded bg-fire/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-fire">
+                          {c.type === "vip" ? "VIP" : c.label}
+                        </span>
                         <p className="mt-1 text-[11px] text-mute">
-                          {c.type === "vip"
-                            ? `${c.daysRemaining} days left · ${c.dailyRemainingUnlocks ?? 3}/${c.maxDailyUnlocks ?? 3} unlocks left today`
-                            : `${c.remainingUnlocks} use${c.remainingUnlocks === 1 ? "" : "s"} left`}
+                          {c.delivery === "sms" && "Code sent to your phone by SMS."}
+                          {c.delivery === "recently_sent" && "Code already sent — check your messages."}
+                          {c.delivery === "shown" && "Nigeria: your code is shown once — save it now."}
+                          {c.delivery === "unavailable" && "We couldn't send this code. Please contact support."}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleReveal(c.code)}
-                        className="rounded-xl bg-fire/20 px-3 py-1.5 text-xs font-bold text-fire hover:bg-fire hover:text-pitch-dark"
-                      >
-                        Use Code
-                      </button>
+                      {c.delivery === "shown" && c.code && (
+                        <button
+                          type="button"
+                          onClick={() => void handleReveal(c.code)}
+                          className="rounded-xl bg-fire/20 px-3 py-1.5 font-mono text-xs font-bold text-fire hover:bg-fire hover:text-pitch-dark"
+                          title="Unlock with this code"
+                        >
+                          {c.code}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>

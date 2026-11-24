@@ -112,9 +112,11 @@ export type PaymentAnalyticsData = {
   split: { hisPercent: number; myPercent: number };
   ghsToNgn: number;
   day: RevenueBucket;
+  yesterday?: RevenueBucket;
   week: RevenueBucket;
   month: RevenueBucket;
   allTime: RevenueBucket;
+  custom?: (RevenueBucket & { from: string; to: string }) | null;
   statusCounts: {
     paid: number;
     pending: number;
@@ -170,6 +172,7 @@ export type AdminPayoutItem = {
   notes?: string;
   status: "pending" | "paid" | "rejected";
   requestedBy?: string;
+  weekStart?: string | null;
   paidAt?: string | null;
   paidBy?: string;
   paidReference?: string;
@@ -193,6 +196,13 @@ export type PayoutsResponse = {
   summary: {
     forson: PayoutAdminSummary;
     asamoah: PayoutAdminSummary;
+  };
+  /** The payout week the list + summary belong to (Mon 00:00 – next Mon 00:00). */
+  week?: { start: string; end: string; isCurrent: boolean };
+  /** Always the current week — the only week new requests can draw from. */
+  currentWeek?: {
+    start: string;
+    summary: { forson: PayoutAdminSummary; asamoah: PayoutAdminSummary };
   };
 };
 

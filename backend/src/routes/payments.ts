@@ -39,6 +39,12 @@ import {
   looksLikePayPhone,
 } from "../services/sms.js";
 import { fulfillVipPayment, loadPaidTips } from "../services/vip.js";
+import {
+  codeExpiry,
+  isNigerianPayment,
+  maskPhone,
+  takeDisplayableCode,
+} from "../services/codes.js";
 import { HttpError } from "../utils/httpError.js";
 
 export const paymentsRouter = Router();
@@ -142,6 +148,39 @@ function isKnownMoolreAccount(accountNumber: string): boolean {
   );
 }
 
+/**
+ * What the website may see for a paid payment. The unlock code is delivered by SMS
+ * and never returned here, except a Nigerian payer's code during its one-time
+ * display window (Nigeria has no SMS support). Games stop once the code expires,
+ * so a saved login can't keep pulling each new day's slip.
+ */
+async function paidView(externalRef: string) {
+  const payment = await Payment.findOne({ externalRef });
+  if (!payment) throw new HttpError(404, "Payment not found");
+  const now = new Date();
+  const expired = codeExpiry(payment) <= now;
+  const shownCode = expired ? undefined : takeDisplayableCode(payment, now);
+  if (shownCode) await payment.save();
+  const isVip = payment.codeType === "vip" || payment.product === "vip";
+  return {
+    status: "paid" as const,
+    reference: payment.externalRef,
+    product: payment.product,
+    smsSent: payment.smsSent,
+    slipViewed: Boolean(payment.slipViewed),
+    revealCode: shownCode,
+    codeDelivery: isNigerianPayment(payment) ? ("screen" as const) : ("sms" as const),
+    maskedPhone: maskPhone(payment.phone || ""),
+    codeType: payment.codeType,
+    unlockCount: payment.unlockCount ?? 0,
+    maxUnlocks: payment.maxUnlocks ?? (isVip ? 21 : 2),
+    vipExpiresAt: payment.vipExpiresAt,
+    expired,
+    createdAt: payment.createdAt,
+    tips: expired ? [] : await loadPaidTips(payment.product || "vip"),
+  };
+}
+
 async function paymentSnapshot(
   payment: {
     externalRef: string;
@@ -165,21 +204,7 @@ async function paymentSnapshot(
   options?: { quick?: boolean }
 ) {
   if (payment.status === "paid") {
-    const viewed = Boolean(payment.slipViewed);
-    return {
-      status: "paid" as const,
-      reference: payment.externalRef,
-      product: payment.product,
-      smsSent: payment.smsSent,
-      slipViewed: viewed,
-      revealCode: payment.revealCode,
-      codeType: payment.codeType,
-      unlockCount: payment.unlockCount ?? 0,
-      maxUnlocks: payment.maxUnlocks ?? 2,
-      vipExpiresAt: payment.vipExpiresAt,
-      createdAt: payment.createdAt,
-      tips: await loadPaidTips(payment.product || "vip"),
-    };
+    return paidView(payment.externalRef);
   }
 
   const provider = payment.provider || "moolre";
@@ -214,26 +239,12 @@ async function paymentSnapshot(
       verified.currency === "NGN" &&
       koboAmountsMatch(payment.amount, verified.amountKobo)
     ) {
-      const fulfilled = await fulfillVipPayment(payment.externalRef, {
+      await fulfillVipPayment(payment.externalRef, {
         moolreTxId: verified.transactionId,
         phone: verified.phone,
         rawStatus: verified.raw,
       });
-      const tips = await loadPaidTips(fulfilled.product);
-      return {
-        status: "paid" as const,
-        reference: payment.externalRef,
-        product: fulfilled.product,
-        smsSent: fulfilled.smsSent,
-        slipViewed: false,
-        revealCode: fulfilled.revealCode,
-        codeType: fulfilled.product === "vip" ? "vip" : "single",
-        unlockCount: 0,
-        maxUnlocks: fulfilled.product === "vip" ? 999999 : 2,
-        vipExpiresAt: fulfilled.vipExpiresAt,
-        createdAt: payment.createdAt,
-        tips,
-      };
+      return paidView(payment.externalRef);
     }
     return {
       status: payment.status,
@@ -261,26 +272,12 @@ async function paymentSnapshot(
     verified.externalRef === payment.externalRef &&
     amountsMatch(payment.amount, verified.amount)
   ) {
-    const fulfilled = await fulfillVipPayment(payment.externalRef, {
+    await fulfillVipPayment(payment.externalRef, {
       moolreTxId: verified.transactionId,
       phone: verified.phone,
       rawStatus: verified.raw,
     });
-    const tips = await loadPaidTips(fulfilled.product);
-    return {
-      status: "paid" as const,
-      reference: payment.externalRef,
-      product: fulfilled.product,
-      smsSent: fulfilled.smsSent,
-      slipViewed: false,
-      revealCode: fulfilled.revealCode,
-      codeType: fulfilled.product === "vip" ? "vip" : "single",
-      unlockCount: 0,
-      maxUnlocks: fulfilled.product === "vip" ? 999999 : 2,
-      vipExpiresAt: fulfilled.vipExpiresAt,
-      createdAt: payment.createdAt,
-      tips,
-    };
+    return paidView(payment.externalRef);
   }
 
   return {
@@ -745,12 +742,11 @@ paymentsRouter.post(
       if (payment.provider === "opay" || payment.provider === "manual") {
         throw new HttpError(400, "OPay manual transfers must be verified and approved by the admin in the dashboard.");
       }
-      const result = await fulfillVipPayment(reference, {
+      await fulfillVipPayment(reference, {
         moolreTxId: "simulated",
         rawCallback: { simulated: true },
       });
-      const tips = await loadPaidTips(result.product);
-      res.json({ status: "paid", reference, tips, ...result });
+      res.json(await paidView(reference));
 
     } catch (err) {
       next(err);
@@ -764,12 +760,15 @@ paymentsRouter.delete(
   requireAdmin,
   async (_req: AuthedRequest, res, next) => {
     try {
-      const result = await Payment.deleteMany({});
-      const usersResult = await User.deleteMany({ role: { $ne: "admin" } });
+      // Only remove demo rows created by "Seed Demo Data" (externalRef "TEST-...").
+      // Real payments (se_/ng_ refs) and customer accounts are never touched.
+      const result = await Payment.deleteMany({ externalRef: { $regex: "^TEST-" } });
       res.json({
-        message: "All mock and test payments have been cleared.",
+        message:
+          result.deletedCount > 0
+            ? `Cleared ${result.deletedCount} demo transaction${result.deletedCount === 1 ? "" : "s"}. Real payments were not touched.`
+            : "No demo transactions to clear. Real payments were not touched.",
         deletedPayments: result.deletedCount,
-        deletedGuestUsers: usersResult.deletedCount,
       });
     } catch (err) {
       next(err);
