@@ -28,8 +28,6 @@ const paymentSchema = new Schema(
     unlockCount: { type: Number, default: 0 },
     maxUnlocks: { type: Number, default: 2 },
     vipExpiresAt: { type: Date, default: null },
-    // Single-slip codes stop working after this time (set when the payment is fulfilled)
-    codeExpiresAt: { type: Date, default: null },
     deviceIds: { type: [String], default: [] },
     activeSessionDeviceId: { type: String, default: "" },
     // Opaque token for the current 30-min unlock session (sent to the browser instead of the code)
@@ -40,6 +38,7 @@ const paymentSchema = new Schema(
     lastCodeSmsAt: { type: Date, default: null },
     activeSessionExpiresAt: { type: Date, default: null },
     lastUnlockedAt: { type: Date, default: null },
+    paidAt: { type: Date, default: null },
     dailyUnlockDate: { type: String, default: "" }, // Format: YYYY-MM-DD
     dailyUnlockCount: { type: Number, default: 0 },
     maxDailyUnlocks: { type: Number, default: 3 },

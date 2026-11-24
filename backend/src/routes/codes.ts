@@ -13,7 +13,7 @@ import {
   takeDisplayableCode,
 } from "../services/codes.js";
 import { sendMoolreSms } from "../services/sms.js";
-import { loadPaidTips } from "../services/vip.js";
+import { tipsForPayment } from "../services/vip.js";
 import { HttpError } from "../utils/httpError.js";
 
 export const codesRouter = Router();
@@ -71,7 +71,7 @@ codesRouter.post("/reveal", async (req, res, next) => {
         403,
         isVip
           ? `This VIP subscription code expired on ${expiresAt.toLocaleDateString()}.`
-          : "This code has expired. Codes are valid for 48 hours after payment."
+          : "This code was for an earlier slip and has expired. Buy today's slip to see the new odds."
       );
     }
 
@@ -125,7 +125,7 @@ codesRouter.post("/reveal", async (req, res, next) => {
       }
       await payment.save();
 
-      const tips = await loadPaidTips("vip");
+      const tips = await tipsForPayment(payment);
       const sessionLeft = payment.activeSessionExpiresAt
         ? payment.activeSessionExpiresAt.getTime() - now.getTime()
         : 0;
@@ -148,7 +148,7 @@ codesRouter.post("/reveal", async (req, res, next) => {
       return;
     }
 
-    // Single slip
+    // Single slip (expiry for the purchase-day slip window is checked above via codeExpiry)
     const max = payment.maxUnlocks || 2;
     if (!isGracePeriod) {
       if ((payment.unlockCount ?? 0) >= max) {
@@ -160,7 +160,7 @@ codesRouter.post("/reveal", async (req, res, next) => {
       await payment.save();
     }
 
-    const tips = await loadPaidTips(payment.product || "odds10");
+    const tips = await tipsForPayment(payment);
     const msLeft = payment.activeSessionExpiresAt
       ? payment.activeSessionExpiresAt.getTime() - now.getTime()
       : 0;

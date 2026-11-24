@@ -38,7 +38,7 @@ import {
   formatPhoneForMoolre,
   looksLikePayPhone,
 } from "../services/sms.js";
-import { fulfillVipPayment, loadPaidTips } from "../services/vip.js";
+import { fulfillVipPayment, tipsForPayment } from "../services/vip.js";
 import {
   codeExpiry,
   isNigerianPayment,
@@ -177,7 +177,10 @@ async function paidView(externalRef: string) {
     vipExpiresAt: payment.vipExpiresAt,
     expired,
     createdAt: payment.createdAt,
-    tips: expired ? [] : await loadPaidTips(payment.product || "vip"),
+    // The slip is shown once right after payment (until acknowledged); after that
+    // it lives on SMS and behind the unlock code, which enforces the unlock limits.
+    // tipsForPayment only returns the slip that was on sale the day it was paid.
+    tips: expired || payment.slipViewed ? [] : await tipsForPayment(payment),
   };
 }
 
@@ -193,6 +196,7 @@ async function paymentSnapshot(
     provider?: string;
     createdAt?: Date;
     revealCode?: string | null;
+    paidAt?: Date | null;
     codeType?: string | null;
     unlockCount?: number | null;
     maxUnlocks?: number | null;

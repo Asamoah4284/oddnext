@@ -149,6 +149,16 @@ export async function fetchProducts(): Promise<ProductItem[]> {
   }
 }
 
+// Same key as lib/deviceId.ts (kept local because this module also runs on the server).
+function readDeviceId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem("oddnext_device_id") ?? "";
+  } catch {
+    return "";
+  }
+}
+
 /** Stores the 30-minute unlock session token (never the unlock code itself). */
 export const UNLOCK_SESSION_KEY = "oddnext_unlock_session";
 
@@ -170,14 +180,8 @@ export async function fetchTips(
   const headers: Record<string, string> = {};
   if (activeCode) {
     headers["x-unlock-session"] = activeCode;
-    // Server only honours the code on the device that revealed it
-    // (deviceId.ts is a client module, so read the stored id directly here)
-    let deviceId = "";
-    try {
-      deviceId = typeof window !== "undefined" ? localStorage.getItem("oddnext_device_id") || "" : "";
-    } catch {
-      deviceId = "";
-    }
+    // The backend only honours the session on the device that revealed it.
+    const deviceId = readDeviceId();
     if (deviceId) headers["x-device-id"] = deviceId;
   }
 

@@ -1,4 +1,5 @@
 import { Payment } from "../models/Payment.js";
+import { addDays, endOfDay } from "../utils/dates.js";
 
 export function normalizeRevealCode(rawCode: string): string {
   if (!rawCode) return "";
@@ -23,27 +24,31 @@ export async function generateUniqueRevealCode(product: string): Promise<string>
   return `${prefix}-${Date.now().toString().slice(-5)}`;
 }
 
-/** How long a single-slip reveal code stays valid after payment. */
-export const SINGLE_CODE_TTL_MS = 48 * 60 * 60 * 1000;
 /** Fallback VIP length for legacy/seeded payments that never got vipExpiresAt. */
 export const VIP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * When a paid code stops working. Payments missing an explicit expiry
- * (older records, demo seeds) fall back to createdAt + TTL instead of never expiring.
+ * When a paid code stops working.
+ * - VIP: vipExpiresAt, or createdAt + 7 days for older/seeded records (never "forever").
+ * - Single slip: end of the day after purchase — the same window as
+ *   slipWindow()/isSlipExpired() in services/vip.ts (a slip code only covers
+ *   the slip that was on sale the day it was paid).
  */
 export function codeExpiry(payment: {
   product?: string | null;
   codeType?: string | null;
   vipExpiresAt?: Date | null;
-  codeExpiresAt?: Date | null;
+  paidAt?: Date | null;
   createdAt?: Date | null;
 }): Date {
   const isVip = payment.codeType === "vip" || payment.product === "vip";
-  const explicit = isVip ? payment.vipExpiresAt : payment.codeExpiresAt;
-  if (explicit) return new Date(explicit);
-  const base = payment.createdAt ? new Date(payment.createdAt).getTime() : 0;
-  return new Date(base + (isVip ? VIP_TTL_MS : SINGLE_CODE_TTL_MS));
+  if (isVip) {
+    if (payment.vipExpiresAt) return new Date(payment.vipExpiresAt);
+    const base = payment.createdAt ? new Date(payment.createdAt).getTime() : 0;
+    return new Date(base + VIP_TTL_MS);
+  }
+  const paidAt = payment.paidAt ?? payment.createdAt ?? new Date(0);
+  return endOfDay(addDays(new Date(paidAt), 1));
 }
 
 /** Nigerian payers can't receive SMS, so their code is shown on the site for this long after approval. */
